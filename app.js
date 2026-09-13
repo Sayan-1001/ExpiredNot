@@ -896,7 +896,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (sendOtpBtnText) sendOtpBtnText.textContent = 'Continue to Verification →';
 
           if (fbErr.code === 'auth/email-already-in-use') {
-            showSignupNotice('An account with this email already exists. Please sign in.', 'error');
+            showSignupNotice('An account already exists with this email. Please sign in instead.', 'error', true);
             return;
           } else if (fbErr.code === 'auth/weak-password') {
             showSignupNotice('Password is too weak. Please use at least 8 characters.', 'error');
@@ -917,11 +917,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  const showSignupNotice = (msg, type = 'error') => {
+  const showSignupNotice = (msg, type = 'error', showSignInBtn = false) => {
     if (!signupNotice) return;
     signupNotice.className = `auth-notice ${type}`;
-    signupNotice.textContent = msg;
+    signupNotice.innerHTML = `
+      <span>${msg}</span>
+      ${showSignInBtn ? '<button type="button" class="auth-notice-btn" id="signupNoticeSignInBtn">Sign In →</button>' : ''}
+    `;
     signupNotice.hidden = false;
+
+    const btn = document.getElementById('signupNoticeSignInBtn');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        showScreen('auth');
+      });
+    }
   };
 
   // Step 2: Email Verification Link Controller
