@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isPasswordProvider && !u.emailVerified) {
           showScreen('signup');
           goToOnboardingStep(2);
-          showOtpNotice('Please verify your email before continuing.', 'error');
+          showOtpNotice('Verify your email before continuing.', 'error');
           return;
         }
       }
@@ -342,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
               showScreen('signup');
               goToOnboardingStep(2);
-              showOtpNotice('Please verify your email before continuing.', 'error');
+              showOtpNotice('Verify your email before continuing.', 'error');
               return;
             }
 
@@ -416,7 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (maskedDisplay) maskedDisplay.textContent = maskEmail(data.email);
             showScreen('signup');
             goToOnboardingStep(2);
-            showOtpNotice('Please verify your email before continuing.', 'error');
+            showOtpNotice('Verify your email before continuing.', 'error');
             return;
           }
           showAuthNotice(data.error || 'Authentication failed. Please check credentials.', 'error', data.not_found);
@@ -2690,7 +2690,37 @@ document.addEventListener('DOMContentLoaded', () => {
       demoModeBanner.style.display = 'none';
     }
 
-    // Guard against unverified Firebase password accounts
+    // Attach Firebase Auth state listener to guard against unverified email/password sessions
+    if (window.firebaseAuth && typeof window.firebaseAuth.onAuthStateChanged === 'function') {
+      window.firebaseAuth.onAuthStateChanged(async (fbUser) => {
+        if (fbUser) {
+          const isPasswordProvider = fbUser.providerData && fbUser.providerData.some(p => p.providerId === 'password');
+          if (isPasswordProvider) {
+            try {
+              await fbUser.reload();
+            } catch {}
+            if (!fbUser.emailVerified) {
+              sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+              localStorage.removeItem(ACTIVE_SESSION_KEY);
+              sessionStorage.removeItem(ACTIVE_TOKEN_KEY);
+              localStorage.removeItem(ACTIVE_TOKEN_KEY);
+              sessionToken = null;
+              currentPharmacy = null;
+
+              pendingRegistration.email = fbUser.email;
+              const maskedDisplay = document.getElementById('maskedEmailDisplay');
+              if (maskedDisplay) maskedDisplay.textContent = maskEmail(fbUser.email);
+
+              showScreen('signup');
+              goToOnboardingStep(2);
+              showOtpNotice('Verify your email before continuing.', 'error');
+            }
+          }
+        }
+      });
+    }
+
+    // Direct synchronous check on boot
     if (window.firebaseAuth && window.firebaseAuth.currentUser) {
       const fbUser = window.firebaseAuth.currentUser;
       const isPasswordProvider = fbUser.providerData && fbUser.providerData.some(p => p.providerId === 'password');
@@ -2712,7 +2742,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
           showScreen('signup');
           goToOnboardingStep(2);
-          showOtpNotice('Please verify your email before continuing.', 'error');
+          showOtpNotice('Verify your email before continuing.', 'error');
           return;
         }
       }
