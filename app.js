@@ -310,6 +310,24 @@ document.addEventListener('DOMContentLoaded', () => {
           const userCredential = await window.firebaseAuth.signInWithEmailAndPassword(identifier, pass);
           const fbUser = userCredential.user;
           if (fbUser) {
+            await fbUser.reload();
+            if (!fbUser.emailVerified) {
+              if (signInButton) signInButton.disabled = false;
+              if (signInBtnText) signInBtnText.textContent = 'Sign In';
+
+              pendingRegistration.email = fbUser.email;
+              pendingRegistration.password = pass;
+
+              const maskedDisplay = document.getElementById('maskedEmailDisplay');
+              if (maskedDisplay) maskedDisplay.textContent = maskEmail(fbUser.email);
+
+              showScreen('signup');
+              goToOnboardingStep(2);
+              showOtpNotice('Your email has not been verified yet. Please check your inbox and click the verification link before signing in.', 'error');
+              return;
+            }
+
+            // User email IS verified -> proceed to backend session bridge
             const bridgeRes = await fetch(`${API_BASE_URL}/api/auth/firebase`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -823,37 +841,6 @@ document.addEventListener('DOMContentLoaded', () => {
     otpTimerInterval = setInterval(updateCountdown, 1000);
   };
 
-  const setupDemoOtpDisplay = (data) => {
-    currentDemoOtp = data.demo_otp || '';
-    const demoDisplay = document.getElementById('demoOtpDisplay');
-    const demoBanner = document.getElementById('demoOtpBanner');
-    const demoTag = document.getElementById('demoVerificationTag');
-    const otpHeading = document.getElementById('otpStepHeading');
-    const otpSubtext = document.getElementById('otpStepSubtext');
-    const resendLabel = document.getElementById('resendPromptLabel');
-    const resendBtnText = document.getElementById('resendTimerText');
-
-    if (data.demo_otp || data.demo_mode) {
-      if (demoBanner) demoBanner.hidden = false;
-      if (demoTag) demoTag.hidden = false;
-      if (demoDisplay && data.demo_otp) demoDisplay.textContent = data.demo_otp;
-      if (otpHeading) otpHeading.textContent = 'Demo Email Verification';
-      if (otpSubtext) otpSubtext.textContent = "We've generated a verification code for this demo.";
-      if (resendLabel) resendLabel.textContent = 'Need a new code?';
-      if (resendBtnText) resendBtnText.textContent = 'Generate New Code';
-    } else {
-      if (demoBanner) demoBanner.hidden = true;
-      if (demoTag) demoTag.hidden = true;
-      if (otpHeading) otpHeading.textContent = 'Verify your email';
-      if (otpSubtext) otpSubtext.innerHTML = `We've sent a 6-digit verification code to <strong id="maskedEmailDisplay" class="text-gradient-highlight">${data.masked_email || 'your email'}</strong>. Check your inbox and enter the code below.`;
-      if (resendLabel) resendLabel.textContent = "Didn't receive the code?";
-      if (resendBtnText) resendBtnText.textContent = 'Resend code';
-    }
-
-    startOtpTimer(data.expires_in_seconds || 600);
-    if (verifyOtpBtn) verifyOtpBtn.disabled = false;
-  };
-
   const goToOnboardingStep = (stepNumber) => {
     const panes = [
       { step: 1, el: paneCreateAccount, pct: '25%', label: 'Account' },
@@ -920,39 +907,27 @@ document.addEventListener('DOMContentLoaded', () => {
       if (sendOtpBtn) sendOtpBtn.disabled = true;
       if (sendOtpBtnText) sendOtpBtnText.textContent = 'Creating account…';
 
-      // 1. Attempt Firebase Email/Password Sign-Up if available
+      // 1. Firebase Email/Password Sign-Up & Immediate Verification Email Dispatch
       if (window.firebaseAuth) {
         try {
           const userCredential = await window.firebaseAuth.createUserWithEmailAndPassword(email, pass);
           const fbUser = userCredential.user;
 
-          const res = await fetch(`${API_BASE_URL}/api/auth/firebase`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: fbUser.email, uid: fbUser.uid, name: '' })
-          });
-          const data = await res.json();
-
-          if (sendOtpBtn) sendOtpBtn.disabled = false;
-          if (sendOtpBtnText) sendOtpBtnText.textContent = 'Continue to Verification →';
-
-          if (!res.ok) {
-            showSignupNotice(data.error || 'Unable to initialize account. Please try again.', 'error');
-            return;
-          }
-
-          sessionToken = data.session_token;
-          sessionStorage.setItem(ACTIVE_TOKEN_KEY, sessionToken);
-          currentPharmacy = data.user;
-          sessionStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(currentPharmacy));
+          // Immediately dispatch real Firebase email verification link
+          await fbUser.sendEmailVerification();
 
           pendingRegistration.email = email;
           pendingRegistration.password = pass;
 
-          showSignupNotice('Account created successfully! Proceeding to setup…', 'success');
-          setTimeout(() => {
-            goToOnboardingStep(3); // Proceed directly to Pharmacy Details
-          }, 350);
+          if (sendOtpBtn) sendOtpBtn.disabled = false;
+          if (sendOtpBtnText) sendOtpBtnText.textContent = 'Continue to Verification →';
+
+          const maskedDisplay = document.getElementById('maskedEmailDisplay');
+          if (maskedDisplay) maskedDisplay.textContent = maskEmail(email);
+
+          goToOnboardingStep(2);
+          showOtpNotice("We've sent a verification link to your email address. Please open your inbox and click the link before continuing.", 'info');
+          startResendCooldown(60);
           return;
         } catch (fbErr) {
           if (sendOtpBtn) sendOtpBtn.disabled = false;
@@ -968,52 +943,14 @@ document.addEventListener('DOMContentLoaded', () => {
             showSignupNotice('Please enter a valid email address.', 'error');
             return;
           } else {
-            console.warn('Firebase registration note:', fbErr);
+            showSignupNotice(fbErr.message || 'Unable to create account. Please try again.', 'error');
+            return;
           }
         }
-      }
-
-      // 2. Server Registration Fallback
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password: pass })
-        });
-        const data = await res.json();
-
+      } else {
         if (sendOtpBtn) sendOtpBtn.disabled = false;
         if (sendOtpBtnText) sendOtpBtnText.textContent = 'Continue to Verification →';
-
-        if (!res.ok) {
-          showSignupNotice(data.error || 'Unable to create account. Please check your email address.', 'error');
-          return;
-        }
-
-        pendingRegistration.email = email;
-        pendingRegistration.password = pass;
-
-        const maskedDisplay = document.getElementById('maskedEmailDisplay');
-        if (maskedDisplay) maskedDisplay.textContent = data.masked_email || maskEmail(email);
-
-        setupDemoOtpDisplay(data);
-        goToOnboardingStep(2);
-        clearOtpBoxes();
-
-        const noticeEl = document.getElementById('otpNotice');
-        if (noticeEl) {
-          noticeEl.className = 'auth-notice info';
-          if (data.demo_otp || data.demo_mode) {
-            noticeEl.textContent = 'Demo verification code generated. Enter the code above to continue.';
-          } else {
-            noticeEl.textContent = `A 6-digit code has been dispatched to ${data.masked_email || maskEmail(email)}. Please check your inbox.`;
-          }
-          noticeEl.hidden = false;
-        }
-      } catch (err) {
-        if (sendOtpBtn) sendOtpBtn.disabled = false;
-        if (sendOtpBtnText) sendOtpBtnText.textContent = 'Continue to Verification →';
-        showSignupNotice('Unable to reach EXPIREDNOT server. Please check your internet connection.', 'error');
+        showSignupNotice('Firebase Authentication is not available. Please check internet connection.', 'error');
       }
     });
   }
@@ -1025,122 +962,34 @@ document.addEventListener('DOMContentLoaded', () => {
     signupNotice.hidden = false;
   };
 
-  // Step 2: 6-Digit OTP Handling
-  const otpBoxes = document.querySelectorAll('.otp-digit-box');
+  // Step 2: Email Verification Link Controller
   const verifyOtpBtn = document.getElementById('verifyOtpBtn');
   const verifyOtpBtnText = document.getElementById('verifyOtpBtnText');
   const otpNotice = document.getElementById('otpNotice');
   const resendOtpBtn = document.getElementById('resendOtpBtn');
   const resendTimerText = document.getElementById('resendTimerText');
-  const copyOtpBtn = document.getElementById('copyOtpBtn');
-  const copyOtpBtnText = document.getElementById('copyOtpBtnText');
+  const changeEmailBtn = document.getElementById('changeEmailBtn');
 
-  const clearOtpBoxes = () => {
-    otpBoxes.forEach(b => {
-      b.value = '';
-      b.classList.remove('error');
-    });
-    if (otpBoxes[0]) otpBoxes[0].focus();
+  let resendCooldownInterval = null;
+  let resendCooldownRemaining = 0;
+
+  const startResendCooldown = (seconds = 60) => {
+    if (resendCooldownInterval) clearInterval(resendCooldownInterval);
+    resendCooldownRemaining = seconds;
+    if (resendOtpBtn) resendOtpBtn.disabled = true;
+    if (resendTimerText) resendTimerText.textContent = `Resend in ${resendCooldownRemaining}s`;
+
+    resendCooldownInterval = setInterval(() => {
+      resendCooldownRemaining -= 1;
+      if (resendCooldownRemaining <= 0) {
+        clearInterval(resendCooldownInterval);
+        if (resendOtpBtn) resendOtpBtn.disabled = false;
+        if (resendTimerText) resendTimerText.textContent = 'Resend Verification Email';
+      } else {
+        if (resendTimerText) resendTimerText.textContent = `Resend in ${resendCooldownRemaining}s`;
+      }
+    }, 1000);
   };
-
-  // Copy Code Button
-  if (copyOtpBtn) {
-    copyOtpBtn.addEventListener('click', async () => {
-      if (!currentDemoOtp) return;
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(currentDemoOtp);
-        } else {
-          const ta = document.createElement('textarea');
-          ta.value = currentDemoOtp;
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand('copy');
-          document.body.removeChild(ta);
-        }
-      } catch (err) {
-        console.warn('Clipboard copy error:', err);
-      }
-
-      // Auto-fill digit boxes for smooth presentation
-      currentDemoOtp.split('').slice(0, 6).forEach((char, i) => {
-        if (otpBoxes[i]) otpBoxes[i].value = char;
-      });
-      if (otpBoxes[5]) otpBoxes[5].focus();
-
-      if (copyOtpBtnText) copyOtpBtnText.textContent = '✓ Copied';
-      copyOtpBtn.classList.add('copied');
-      showOtpNotice('Code copied', 'info');
-
-      setTimeout(() => {
-        if (copyOtpBtnText) copyOtpBtnText.textContent = 'Copy Code';
-        copyOtpBtn.classList.remove('copied');
-      }, 2000);
-    });
-  }
-
-  otpBoxes.forEach((box, idx) => {
-    box.addEventListener('input', (e) => {
-      const val = e.target.value.replace(/\D/g, '');
-      box.value = val.slice(-1);
-
-      if (box.value && idx < otpBoxes.length - 1) {
-        otpBoxes[idx + 1].focus();
-      }
-    });
-
-    box.addEventListener('keydown', (e) => {
-      if (e.key === 'Backspace' && !box.value && idx > 0) {
-        otpBoxes[idx - 1].focus();
-      }
-    });
-
-    box.addEventListener('paste', (e) => {
-      e.preventDefault();
-      const pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '');
-      if (pasted) {
-        pasted.split('').slice(0, 6).forEach((char, i) => {
-          if (otpBoxes[i]) otpBoxes[i].value = char;
-        });
-        const lastIdx = Math.min(pasted.length, 5);
-        if (otpBoxes[lastIdx]) otpBoxes[lastIdx].focus();
-      }
-    });
-  });
-
-  // Resend / Generate New Code Handler
-  if (resendOtpBtn) {
-    resendOtpBtn.addEventListener('click', async () => {
-      if (!pendingRegistration.email) return;
-      if (resendOtpBtn) resendOtpBtn.disabled = true;
-      const originalText = resendTimerText ? resendTimerText.textContent : 'Generate New Code';
-      if (resendTimerText) resendTimerText.textContent = 'Generating…';
-
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/auth/resend-otp`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: pendingRegistration.email })
-        });
-        const data = await res.json();
-        if (resendOtpBtn) resendOtpBtn.disabled = false;
-        if (resendTimerText) resendTimerText.textContent = originalText;
-
-        if (!res.ok) {
-          showOtpNotice(data.error || 'Unable to generate new code. Please try again.', 'error');
-          return;
-        }
-
-        setupDemoOtpDisplay(data);
-        clearOtpBoxes();
-        showOtpNotice('New verification code generated.', 'info');
-      } catch {
-        if (resendOtpBtn) resendOtpBtn.disabled = false;
-        if (resendTimerText) resendTimerText.textContent = originalText;
-        showOtpNotice('Unable to reach EXPIREDNOT server. Please check your internet connection.', 'error');
-      }
-    });
-  }
 
   const showOtpNotice = (msg, type = 'error') => {
     if (!otpNotice) return;
@@ -1149,69 +998,120 @@ document.addEventListener('DOMContentLoaded', () => {
     otpNotice.hidden = false;
   };
 
+  // "Check Verification" Handler
   if (verifyOtpBtn) {
     verifyOtpBtn.addEventListener('click', async () => {
-      if (otpNotice) otpNotice.hidden = true;
-
-      const enteredCode = Array.from(otpBoxes).map(b => b.value).join('');
-
-      if (enteredCode.length < 6) {
-        showOtpNotice('Please enter the complete 6-digit code.', 'error');
-        return;
-      }
-
       if (verifyOtpBtn) verifyOtpBtn.disabled = true;
-      if (verifyOtpBtnText) verifyOtpBtnText.textContent = 'Verifying…';
+      if (verifyOtpBtnText) verifyOtpBtnText.textContent = 'Checking…';
 
       try {
-        const res = await fetch(`${API_BASE_URL}/api/auth/verify-otp`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: pendingRegistration.email, code: enteredCode })
-        });
-        const data = await res.json();
-
-        if (verifyOtpBtn) verifyOtpBtn.disabled = false;
-        if (verifyOtpBtnText) verifyOtpBtnText.textContent = 'Verify Email →';
-
-        if (!res.ok) {
-          otpBoxes.forEach(b => b.classList.add('error'));
-          showOtpNotice(data.error || 'Incorrect verification code. Please try again.', 'error');
-          return;
+        let currentUser = window.firebaseAuth ? window.firebaseAuth.currentUser : null;
+        if (!currentUser && pendingRegistration.email && pendingRegistration.password) {
+          try {
+            const cred = await window.firebaseAuth.signInWithEmailAndPassword(pendingRegistration.email, pendingRegistration.password);
+            currentUser = cred.user;
+          } catch (e) {
+            console.warn('Sign-in check note:', e);
+          }
         }
 
-        if (otpTimerInterval) clearInterval(otpTimerInterval);
+        if (currentUser) {
+          await currentUser.reload();
+          if (currentUser.emailVerified) {
+            showOtpNotice('✓ Email verified', 'success');
 
-        sessionToken = data.session_token;
-        sessionStorage.setItem(ACTIVE_TOKEN_KEY, sessionToken);
-        currentPharmacy = data.user;
-        sessionStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(currentPharmacy));
+            // Bridge authenticated & verified user to SQLite backend
+            const res = await fetch(`${API_BASE_URL}/api/auth/firebase`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: currentUser.email, uid: currentUser.uid, name: '' })
+            });
+            const data = await res.json();
 
-        if (data.user && data.user.setup_completed) {
-          showOtpNotice('Verification successful ✓ Logging in…', 'success');
-          setTimeout(async () => {
-            await loadPharmacyData(currentPharmacy.id);
-            showScreen('dashboard');
-          }, 350);
-        } else {
-          showOtpNotice('✓ Email verified', 'success');
-          setTimeout(() => {
-            if (pendingRegistration.isGoogle) {
-              const googleConnectedPill = document.getElementById('googleConnectedPill');
-              const googleEmailDisplay = document.getElementById('googleEmailConnectedDisplay');
-              const regOwnerName = document.getElementById('regOwnerName');
-              if (googleConnectedPill) googleConnectedPill.hidden = false;
-              if (googleEmailDisplay) googleEmailDisplay.textContent = pendingRegistration.email;
-              if (regOwnerName && pendingRegistration.name) regOwnerName.value = pendingRegistration.name;
+            if (verifyOtpBtn) verifyOtpBtn.disabled = false;
+            if (verifyOtpBtnText) verifyOtpBtnText.textContent = 'Check Verification';
+
+            if (!res.ok) {
+              showOtpNotice(data.error || 'Failed to initialize session. Please try again.', 'error');
+              return;
             }
-            goToOnboardingStep(3); // Proceed to Pharmacy Details
-          }, 350);
+
+            sessionToken = data.session_token;
+            sessionStorage.setItem(ACTIVE_TOKEN_KEY, sessionToken);
+            currentPharmacy = data.user;
+            sessionStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(currentPharmacy));
+
+            setTimeout(() => {
+              if (data.user && (data.user.setup_completed || data.user.setupCompleted)) {
+                loadPharmacyData(currentPharmacy.id);
+                showScreen('dashboard');
+              } else {
+                goToOnboardingStep(3); // Proceed to Pharmacy Details
+              }
+            }, 350);
+            return;
+          } else {
+            if (verifyOtpBtn) verifyOtpBtn.disabled = false;
+            if (verifyOtpBtnText) verifyOtpBtnText.textContent = 'Check Verification';
+            showOtpNotice('Your email has not been verified yet. Please check your inbox and click the verification link.', 'error');
+            return;
+          }
+        } else {
+          if (verifyOtpBtn) verifyOtpBtn.disabled = false;
+          if (verifyOtpBtnText) verifyOtpBtnText.textContent = 'Check Verification';
+          showOtpNotice('No active session found. Please enter your email and password to continue.', 'error');
         }
       } catch (err) {
         if (verifyOtpBtn) verifyOtpBtn.disabled = false;
-        if (verifyOtpBtnText) verifyOtpBtnText.textContent = 'Verify Email →';
-        showOtpNotice('Unable to reach EXPIREDNOT server. Please check your internet connection.', 'error');
+        if (verifyOtpBtnText) verifyOtpBtnText.textContent = 'Check Verification';
+        showOtpNotice('Unable to check verification status. Please try again.', 'error');
       }
+    });
+  }
+
+  // "Resend Verification Email" Handler
+  if (resendOtpBtn) {
+    resendOtpBtn.addEventListener('click', async () => {
+      if (resendCooldownRemaining > 0) return;
+      if (resendOtpBtn) resendOtpBtn.disabled = true;
+      if (resendTimerText) resendTimerText.textContent = 'Sending…';
+
+      try {
+        let currentUser = window.firebaseAuth ? window.firebaseAuth.currentUser : null;
+        if (!currentUser && pendingRegistration.email && pendingRegistration.password) {
+          try {
+            const cred = await window.firebaseAuth.signInWithEmailAndPassword(pendingRegistration.email, pendingRegistration.password);
+            currentUser = cred.user;
+          } catch (e) {}
+        }
+
+        if (currentUser) {
+          await currentUser.sendEmailVerification();
+          showOtpNotice('A new verification email has been sent. Please check your inbox.', 'info');
+          startResendCooldown(60);
+        } else {
+          showOtpNotice('Unable to send verification email. Please enter your details and try again.', 'error');
+          if (resendOtpBtn) resendOtpBtn.disabled = false;
+          if (resendTimerText) resendTimerText.textContent = 'Resend Verification Email';
+        }
+      } catch (err) {
+        console.warn('Resend verification error:', err);
+        if (resendOtpBtn) resendOtpBtn.disabled = false;
+        if (resendTimerText) resendTimerText.textContent = 'Resend Verification Email';
+        if (err.code === 'auth/too-many-requests') {
+          showOtpNotice('Too many requests. Please wait a few moments before trying again.', 'error');
+          startResendCooldown(60);
+        } else {
+          showOtpNotice(err.message || 'Failed to resend verification email.', 'error');
+        }
+      }
+    });
+  }
+
+  // "Change Email" Handler
+  if (changeEmailBtn) {
+    changeEmailBtn.addEventListener('click', () => {
+      goToOnboardingStep(1);
     });
   }
 
