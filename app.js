@@ -211,6 +211,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (logoutBtn) {
     logoutBtn.addEventListener('click', async () => {
       try {
+        if (window.firebaseAuth) {
+          await window.firebaseAuth.signOut();
+        }
+      } catch {}
+      try {
         await fetch(`${API_BASE_URL}/api/auth/logout`, { credentials: 'omit', headers: getAuthHeaders(), method: 'POST' });
       } catch {}
       sessionStorage.removeItem(ACTIVE_SESSION_KEY);
@@ -299,6 +304,64 @@ document.addEventListener('DOMContentLoaded', () => {
       if (signInButton) signInButton.disabled = true;
       if (signInBtnText) signInBtnText.textContent = 'Signing in…';
 
+      // 1. Attempt Firebase Authentication if available and identifier is an email
+      if (window.firebaseAuth && identifier.includes('@')) {
+        try {
+          const userCredential = await window.firebaseAuth.signInWithEmailAndPassword(identifier, pass);
+          const fbUser = userCredential.user;
+          if (fbUser) {
+            const bridgeRes = await fetch(`${API_BASE_URL}/api/auth/firebase`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: fbUser.email, uid: fbUser.uid, name: fbUser.displayName || '' })
+            });
+            const data = await bridgeRes.json();
+
+            if (signInButton) signInButton.disabled = false;
+            if (signInBtnText) signInBtnText.textContent = 'Sign In';
+
+            if (!bridgeRes.ok) {
+              showAuthNotice(data.error || 'Authentication bridge failed.', 'error');
+              return;
+            }
+
+            sessionToken = data.session_token;
+            sessionStorage.setItem(ACTIVE_TOKEN_KEY, sessionToken);
+            currentPharmacy = data.user;
+            sessionStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(currentPharmacy));
+
+            if (data.needs_setup) {
+              showScreen('signup');
+              goToOnboardingStep(3);
+              return;
+            }
+
+            await loadPharmacyData(currentPharmacy.id);
+            showScreen('dashboard');
+            return;
+          }
+        } catch (fbErr) {
+          console.warn('Firebase login check:', fbErr.code, fbErr.message);
+          if (fbErr.code === 'auth/wrong-password' || fbErr.code === 'auth/invalid-credential') {
+            if (signInButton) signInButton.disabled = false;
+            if (signInBtnText) signInBtnText.textContent = 'Sign In';
+            showAuthNotice('Incorrect password. Please try again.', 'error');
+            return;
+          } else if (fbErr.code === 'auth/invalid-email') {
+            if (signInButton) signInButton.disabled = false;
+            if (signInBtnText) signInBtnText.textContent = 'Sign In';
+            showAuthNotice('Please enter a valid email address.', 'error');
+            return;
+          } else if (fbErr.code === 'auth/too-many-requests') {
+            if (signInButton) signInButton.disabled = false;
+            if (signInBtnText) signInBtnText.textContent = 'Sign In';
+            showAuthNotice('Access to this account has been temporarily disabled due to many failed attempts.', 'error');
+            return;
+          }
+        }
+      }
+
+      // 2. Server Authentication Fallback
       try {
         const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
           method: 'POST',
@@ -402,14 +465,34 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (forgotPasswordLink) {
-    forgotPasswordLink.addEventListener('click', (e) => {
+    forgotPasswordLink.addEventListener('click', async (e) => {
       e.preventDefault();
+      const identifier = loginIdentifierInput ? loginIdentifierInput.value.trim().toLowerCase() : '';
+      if (!identifier || !identifier.includes('@')) {
+        showAuthNotice('Please enter your email address in the Email field above, then click Forgot password.', 'info');
+        if (loginIdentifierInput) loginIdentifierInput.focus();
+        return;
+      }
+      if (window.firebaseAuth) {
+        try {
+          await window.firebaseAuth.sendPasswordResetEmail(identifier);
+          showAuthNotice(`Password reset instructions sent to ${maskEmail(identifier)}. Check your inbox.`, 'info');
+          return;
+        } catch (err) {
+          if (err.code === 'auth/user-not-found') {
+            showAuthNotice('No account found with this email.', 'error');
+            return;
+          }
+          showAuthNotice(err.message || 'Unable to send password reset email.', 'error');
+          return;
+        }
+      }
       showAuthNotice('Password reset instructions sent to your email.', 'info');
     });
   }
 
   // ==========================================================================
-  // 4. OFFICIAL GOOGLE OAUTH WITH GOOGLE IDENTITY SERVICES
+  // 4. OFFICIAL GOOGLE OAUTH WITH FIREBASE & IDENTITY SERVICES
   // ==========================================================================
   const googleModal = document.getElementById('googleModal');
   const googleModalBackdrop = document.getElementById('googleModalBackdrop');
@@ -517,11 +600,78 @@ document.addEventListener('DOMContentLoaded', () => {
     googleModal.classList.add('view-hidden');
   };
 
+  const handleFirebaseGoogleSignIn = async (e) => {
+    if (e) e.preventDefault();
+    if (window.firebaseAuth && window.googleAuthProvider) {
+      try {
+        showAuthNotice('Signing in with Google…', 'info');
+        const result = await window.firebaseAuth.signInWithPopup(window.googleAuthProvider);
+        const fbUser = result.user;
+        if (!fbUser) return;
+
+        const email = fbUser.email;
+        const name = fbUser.displayName || '';
+        const uid = fbUser.uid;
+
+        const res = await fetch(`${API_BASE_URL}/api/auth/firebase`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, uid, name })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showAuthNotice(data.error || 'Google authentication failed.', 'error');
+          return;
+        }
+
+        sessionToken = data.session_token;
+        sessionStorage.setItem(ACTIVE_TOKEN_KEY, sessionToken);
+        currentPharmacy = data.user;
+        sessionStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(currentPharmacy));
+
+        if (data.existing_user && !data.needs_setup) {
+          showAuthNotice('Welcome back! Logging in…', 'success');
+          setTimeout(async () => {
+            await loadPharmacyData(currentPharmacy.id);
+            showScreen('dashboard');
+          }, 300);
+        } else {
+          // New Google user -> Advance to Pharmacy Setup (email verified by Google)
+          pendingRegistration.email = email;
+          pendingRegistration.name = name;
+          pendingRegistration.isGoogle = true;
+
+          const googleConnectedPill = document.getElementById('googleConnectedPill');
+          const googleEmailDisplay = document.getElementById('googleEmailConnectedDisplay');
+          const regOwnerName = document.getElementById('regOwnerName');
+          if (googleConnectedPill) googleConnectedPill.hidden = false;
+          if (googleEmailDisplay) googleEmailDisplay.textContent = email;
+          if (regOwnerName && name) regOwnerName.value = name;
+
+          showScreen('signup');
+          goToOnboardingStep(3); // Direct to Pharmacy Details
+        }
+        return;
+      } catch (err) {
+        console.warn('Firebase Google Auth note:', err);
+        if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+          hideAuthNotice();
+          return;
+        }
+        if (err.code === 'auth/popup-blocked') {
+          openGoogleModal();
+          return;
+        }
+        showAuthNotice(err.message || 'Google sign-in failed. Please try again.', 'error');
+        return;
+      }
+    }
+    openGoogleModal();
+  };
+
   if (googleSignInBtn) {
-    googleSignInBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      openGoogleModal();
-    });
+    googleSignInBtn.addEventListener('click', handleFirebaseGoogleSignIn);
   }
   if (googleModalBackdrop) googleModalBackdrop.addEventListener('click', closeGoogleModal);
   if (closeGoogleModalBtn) closeGoogleModalBtn.addEventListener('click', closeGoogleModal);
@@ -541,7 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
+      const res = await fetch(`${API_BASE_URL}/api/auth/firebase`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, name })
@@ -770,6 +920,60 @@ document.addEventListener('DOMContentLoaded', () => {
       if (sendOtpBtn) sendOtpBtn.disabled = true;
       if (sendOtpBtnText) sendOtpBtnText.textContent = 'Creating account…';
 
+      // 1. Attempt Firebase Email/Password Sign-Up if available
+      if (window.firebaseAuth) {
+        try {
+          const userCredential = await window.firebaseAuth.createUserWithEmailAndPassword(email, pass);
+          const fbUser = userCredential.user;
+
+          const res = await fetch(`${API_BASE_URL}/api/auth/firebase`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: fbUser.email, uid: fbUser.uid, name: '' })
+          });
+          const data = await res.json();
+
+          if (sendOtpBtn) sendOtpBtn.disabled = false;
+          if (sendOtpBtnText) sendOtpBtnText.textContent = 'Continue to Verification →';
+
+          if (!res.ok) {
+            showSignupNotice(data.error || 'Unable to initialize account. Please try again.', 'error');
+            return;
+          }
+
+          sessionToken = data.session_token;
+          sessionStorage.setItem(ACTIVE_TOKEN_KEY, sessionToken);
+          currentPharmacy = data.user;
+          sessionStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(currentPharmacy));
+
+          pendingRegistration.email = email;
+          pendingRegistration.password = pass;
+
+          showSignupNotice('Account created successfully! Proceeding to setup…', 'success');
+          setTimeout(() => {
+            goToOnboardingStep(3); // Proceed directly to Pharmacy Details
+          }, 350);
+          return;
+        } catch (fbErr) {
+          if (sendOtpBtn) sendOtpBtn.disabled = false;
+          if (sendOtpBtnText) sendOtpBtnText.textContent = 'Continue to Verification →';
+
+          if (fbErr.code === 'auth/email-already-in-use') {
+            showSignupNotice('An account with this email already exists. Please sign in.', 'error');
+            return;
+          } else if (fbErr.code === 'auth/weak-password') {
+            showSignupNotice('Password is too weak. Please use at least 8 characters.', 'error');
+            return;
+          } else if (fbErr.code === 'auth/invalid-email') {
+            showSignupNotice('Please enter a valid email address.', 'error');
+            return;
+          } else {
+            console.warn('Firebase registration note:', fbErr);
+          }
+        }
+      }
+
+      // 2. Server Registration Fallback
       try {
         const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
           method: 'POST',

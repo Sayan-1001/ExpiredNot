@@ -1216,6 +1216,59 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                         "user": sanitize_user(u_row)
                     })
 
+        elif path == '/api/auth/firebase':
+            email = req_data.get('email', '').strip().lower()
+            uid = req_data.get('uid', '').strip()
+            name = req_data.get('name', '').strip()
+            
+            if not email or '@' not in email:
+                return self._send_json({"error": "A valid email address is required."}, 400)
+                
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+                user = cursor.fetchone()
+                now = int(time.time())
+                
+                if user and user['setup_completed']:
+                    token = secrets.token_hex(32)
+                    cursor.execute("INSERT INTO sessions VALUES (?, ?, ?, ?)", (token, user['id'], now + (30 * 86400), now))
+                    cursor.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (user['id'],))
+                    conn.commit()
+                    return self._send_json({
+                        "success": True,
+                        "existing_user": True,
+                        "needs_setup": False,
+                        "session_token": token,
+                        "user": sanitize_user(user)
+                    })
+                else:
+                    user_id = user['id'] if user else f"USR_FB_{int(time.time())}_{secrets.token_hex(4)}"
+                    if not user:
+                        cursor.execute('''
+                            INSERT INTO users (id, email, email_verified, setup_completed, owner_name, auth_provider, created_at)
+                            VALUES (?, ?, 1, 0, ?, 'firebase', ?)
+                        ''', (user_id, email, name, now))
+                    else:
+                        cursor.execute("UPDATE users SET email_verified = 1, auth_provider = 'firebase' WHERE id = ?", (user_id,))
+                    
+                    token = secrets.token_hex(32)
+                    cursor.execute("INSERT INTO sessions VALUES (?, ?, ?, ?)", (token, user_id, now + (30 * 86400), now))
+                    conn.commit()
+                    
+                    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+                    u_row = cursor.fetchone()
+                    
+                    return self._send_json({
+                        "success": True,
+                        "new_user": True,
+                        "needs_setup": True,
+                        "email": email,
+                        "name": name,
+                        "session_token": token,
+                        "user": sanitize_user(u_row)
+                    })
+
         elif path == '/api/onboarding/complete':
             user = self._get_auth_user()
             if not user:
