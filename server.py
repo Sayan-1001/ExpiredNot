@@ -1114,8 +1114,8 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                         }, 400)
                     else:
                         return self._send_json({
-                            "error": "This account was created without a password. Please sign in with Email OTP.",
-                            "needs_otp_login": True
+                            "error": "This account was created with an external provider or email link. Please sign in using your provider or reset your password.",
+                            "needs_password_reset": True
                         }, 400)
                     
                 if not verify_password(password, user_dict.get('password_hash'), user_dict.get('salt')):

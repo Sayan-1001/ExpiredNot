@@ -336,7 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await bridgeRes.json();
 
             if (signInButton) signInButton.disabled = false;
-            if (signInBtnText) signInBtnText.textContent = 'Sign In';
+            if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
 
             if (!bridgeRes.ok) {
               showAuthNotice(data.error || 'Authentication bridge failed.', 'error');
@@ -362,17 +362,17 @@ document.addEventListener('DOMContentLoaded', () => {
           console.warn('Firebase login check:', fbErr.code, fbErr.message);
           if (fbErr.code === 'auth/wrong-password' || fbErr.code === 'auth/invalid-credential') {
             if (signInButton) signInButton.disabled = false;
-            if (signInBtnText) signInBtnText.textContent = 'Sign In';
+            if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
             showAuthNotice('Incorrect password. Please try again.', 'error');
             return;
           } else if (fbErr.code === 'auth/invalid-email') {
             if (signInButton) signInButton.disabled = false;
-            if (signInBtnText) signInBtnText.textContent = 'Sign In';
+            if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
             showAuthNotice('Please enter a valid email address.', 'error');
             return;
           } else if (fbErr.code === 'auth/too-many-requests') {
             if (signInButton) signInButton.disabled = false;
-            if (signInBtnText) signInBtnText.textContent = 'Sign In';
+            if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
             showAuthNotice('Access to this account has been temporarily disabled due to many failed attempts.', 'error');
             return;
           }
@@ -389,7 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await res.json();
 
         if (signInButton) signInButton.disabled = false;
-        if (signInBtnText) signInBtnText.textContent = 'Sign In';
+        if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
 
         if (!res.ok) {
           if (data.needs_verification) {
@@ -419,64 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showScreen('dashboard');
       } catch (err) {
         if (signInButton) signInButton.disabled = false;
-        if (signInBtnText) signInBtnText.textContent = 'Sign In';
-        showAuthNotice('Unable to reach EXPIREDNOT server. Please check your internet connection.', 'error');
-      }
-    });
-  }
-
-  const loginWithOtpBtn = document.getElementById('loginWithOtpBtn');
-  if (loginWithOtpBtn) {
-    loginWithOtpBtn.addEventListener('click', async () => {
-      hideAuthNotice();
-      const identifier = loginIdentifierInput ? loginIdentifierInput.value.trim().toLowerCase() : '';
-      if (!identifier || !identifier.includes('@')) {
-        showAuthNotice('Please enter your email address above to receive a login code.', 'error');
-        if (loginIdentifierInput) loginIdentifierInput.focus();
-        return;
-      }
-
-      loginWithOtpBtn.disabled = true;
-      loginWithOtpBtn.textContent = 'Sending OTP code…';
-
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/auth/send-login-otp`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: identifier })
-        });
-        const data = await res.json();
-
-        loginWithOtpBtn.disabled = false;
-        loginWithOtpBtn.textContent = '📧 Sign in with Email OTP';
-
-        if (!res.ok) {
-          showAuthNotice(data.error || 'Unable to send verification email. Please try again.', 'error');
-          return;
-        }
-
-        pendingRegistration.email = identifier;
-        const maskedDisplay = document.getElementById('maskedEmailDisplay');
-        if (maskedDisplay) maskedDisplay.textContent = data.masked_email || maskEmail(identifier);
-
-        setupDemoOtpDisplay(data);
-        showScreen('signup');
-        goToOnboardingStep(2);
-        clearOtpBoxes();
-
-        const noticeEl = document.getElementById('otpNotice');
-        if (noticeEl) {
-          noticeEl.className = 'auth-notice info';
-          if (data.demo_otp || data.demo_mode) {
-            noticeEl.textContent = 'Demo verification code generated. Enter the code above to sign in.';
-          } else {
-            noticeEl.textContent = `A 6-digit login code has been sent to ${data.masked_email || maskEmail(identifier)}. Check your inbox.`;
-          }
-          noticeEl.hidden = false;
-        }
-      } catch (e) {
-        loginWithOtpBtn.disabled = false;
-        loginWithOtpBtn.textContent = '📧 Sign in with Email OTP';
+        if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
         showAuthNotice('Unable to reach EXPIREDNOT server. Please check your internet connection.', 'error');
       }
     });
