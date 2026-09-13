@@ -378,7 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const maskedDisplay = document.getElementById('maskedEmailDisplay');
         if (maskedDisplay) maskedDisplay.textContent = data.masked_email || maskEmail(identifier);
 
-        startResendTimer();
+        setupDemoOtpDisplay(data);
         showScreen('signup');
         goToOnboardingStep(2);
         clearOtpBoxes();
@@ -386,7 +386,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const noticeEl = document.getElementById('otpNotice');
         if (noticeEl) {
           noticeEl.className = 'auth-notice info';
-          noticeEl.textContent = `A 6-digit login code has been sent to ${data.masked_email || maskEmail(identifier)}. Check your inbox.`;
+          if (data.demo_otp || data.demo_mode) {
+            noticeEl.textContent = 'Demo verification code generated. Enter the code above to sign in.';
+          } else {
+            noticeEl.textContent = `A 6-digit login code has been sent to ${data.masked_email || maskEmail(identifier)}. Check your inbox.`;
+          }
           noticeEl.hidden = false;
         }
       } catch (e) {
@@ -628,12 +632,76 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let resendInterval = null;
   let resendCountdown = 30;
+  let currentDemoOtp = '';
+  let otpTimerInterval = null;
+  let otpExpiresAt = null;
 
   const maskEmail = (emailStr) => {
     if (!emailStr || !emailStr.includes('@')) return 'your email';
     const [name, domain] = emailStr.split('@');
     const maskedName = name.length > 2 ? name[0] + '***' + name.slice(-1) : name[0] + '***';
     return `${maskedName}@${domain}`;
+  };
+
+  const startOtpTimer = (seconds = 600) => {
+    if (otpTimerInterval) clearInterval(otpTimerInterval);
+    otpExpiresAt = Date.now() + (seconds * 1000);
+
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.floor((otpExpiresAt - Date.now()) / 1000));
+      const mins = String(Math.floor(remaining / 60)).padStart(2, '0');
+      const secs = String(remaining % 60).padStart(2, '0');
+      const timerText = document.getElementById('otpExpiryCountdownText');
+      const timerBadge = document.getElementById('otpTimerBadge');
+      
+      if (timerText) {
+        timerText.textContent = `Code expires in ${mins}:${secs}`;
+      }
+
+      if (remaining <= 0) {
+        if (otpTimerInterval) clearInterval(otpTimerInterval);
+        if (timerBadge) timerBadge.classList.add('expired');
+        if (timerText) timerText.textContent = 'Code expired';
+        showOtpNotice('This verification code has expired. Generate a new code.', 'error');
+        if (verifyOtpBtn) verifyOtpBtn.disabled = true;
+      } else {
+        if (timerBadge) timerBadge.classList.remove('expired');
+      }
+    };
+
+    updateCountdown();
+    otpTimerInterval = setInterval(updateCountdown, 1000);
+  };
+
+  const setupDemoOtpDisplay = (data) => {
+    currentDemoOtp = data.demo_otp || '';
+    const demoDisplay = document.getElementById('demoOtpDisplay');
+    const demoBanner = document.getElementById('demoOtpBanner');
+    const demoTag = document.getElementById('demoVerificationTag');
+    const otpHeading = document.getElementById('otpStepHeading');
+    const otpSubtext = document.getElementById('otpStepSubtext');
+    const resendLabel = document.getElementById('resendPromptLabel');
+    const resendBtnText = document.getElementById('resendTimerText');
+
+    if (data.demo_otp || data.demo_mode) {
+      if (demoBanner) demoBanner.hidden = false;
+      if (demoTag) demoTag.hidden = false;
+      if (demoDisplay && data.demo_otp) demoDisplay.textContent = data.demo_otp;
+      if (otpHeading) otpHeading.textContent = 'Demo Email Verification';
+      if (otpSubtext) otpSubtext.textContent = "We've generated a verification code for this demo.";
+      if (resendLabel) resendLabel.textContent = 'Need a new code?';
+      if (resendBtnText) resendBtnText.textContent = 'Generate New Code';
+    } else {
+      if (demoBanner) demoBanner.hidden = true;
+      if (demoTag) demoTag.hidden = true;
+      if (otpHeading) otpHeading.textContent = 'Verify your email';
+      if (otpSubtext) otpSubtext.innerHTML = `We've sent a 6-digit verification code to <strong id="maskedEmailDisplay" class="text-gradient-highlight">${data.masked_email || 'your email'}</strong>. Check your inbox and enter the code below.`;
+      if (resendLabel) resendLabel.textContent = "Didn't receive the code?";
+      if (resendBtnText) resendBtnText.textContent = 'Resend code';
+    }
+
+    startOtpTimer(data.expires_in_seconds || 600);
+    if (verifyOtpBtn) verifyOtpBtn.disabled = false;
   };
 
   const goToOnboardingStep = (stepNumber) => {
@@ -700,7 +768,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (sendOtpBtn) sendOtpBtn.disabled = true;
-      if (sendOtpBtnText) sendOtpBtnText.textContent = 'Sending code…';
+      if (sendOtpBtnText) sendOtpBtnText.textContent = 'Creating account…';
 
       try {
         const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
@@ -714,7 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (sendOtpBtnText) sendOtpBtnText.textContent = 'Continue to Verification →';
 
         if (!res.ok) {
-          showSignupNotice(data.error || 'Unable to send verification email. Please check your email address.', 'error');
+          showSignupNotice(data.error || 'Unable to create account. Please check your email address.', 'error');
           return;
         }
 
@@ -724,14 +792,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const maskedDisplay = document.getElementById('maskedEmailDisplay');
         if (maskedDisplay) maskedDisplay.textContent = data.masked_email || maskEmail(email);
 
-        startResendTimer();
+        setupDemoOtpDisplay(data);
         goToOnboardingStep(2);
         clearOtpBoxes();
 
         const noticeEl = document.getElementById('otpNotice');
         if (noticeEl) {
           noticeEl.className = 'auth-notice info';
-          noticeEl.textContent = `A 6-digit code has been dispatched to ${data.masked_email || maskEmail(email)}. Please check your inbox.`;
+          if (data.demo_otp || data.demo_mode) {
+            noticeEl.textContent = 'Demo verification code generated. Enter the code above to continue.';
+          } else {
+            noticeEl.textContent = `A 6-digit code has been dispatched to ${data.masked_email || maskEmail(email)}. Please check your inbox.`;
+          }
           noticeEl.hidden = false;
         }
       } catch (err) {
@@ -756,6 +828,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const otpNotice = document.getElementById('otpNotice');
   const resendOtpBtn = document.getElementById('resendOtpBtn');
   const resendTimerText = document.getElementById('resendTimerText');
+  const copyOtpBtn = document.getElementById('copyOtpBtn');
+  const copyOtpBtnText = document.getElementById('copyOtpBtnText');
 
   const clearOtpBoxes = () => {
     otpBoxes.forEach(b => {
@@ -764,6 +838,42 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     if (otpBoxes[0]) otpBoxes[0].focus();
   };
+
+  // Copy Code Button
+  if (copyOtpBtn) {
+    copyOtpBtn.addEventListener('click', async () => {
+      if (!currentDemoOtp) return;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(currentDemoOtp);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = currentDemoOtp;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+      } catch (err) {
+        console.warn('Clipboard copy error:', err);
+      }
+
+      // Auto-fill digit boxes for smooth presentation
+      currentDemoOtp.split('').slice(0, 6).forEach((char, i) => {
+        if (otpBoxes[i]) otpBoxes[i].value = char;
+      });
+      if (otpBoxes[5]) otpBoxes[5].focus();
+
+      if (copyOtpBtnText) copyOtpBtnText.textContent = '✓ Copied';
+      copyOtpBtn.classList.add('copied');
+      showOtpNotice('Code copied', 'info');
+
+      setTimeout(() => {
+        if (copyOtpBtnText) copyOtpBtnText.textContent = 'Copy Code';
+        copyOtpBtn.classList.remove('copied');
+      }, 2000);
+    });
+  }
 
   otpBoxes.forEach((box, idx) => {
     box.addEventListener('input', (e) => {
@@ -794,25 +904,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  const startResendTimer = () => {
-    if (resendInterval) clearInterval(resendInterval);
-    resendCountdown = 30;
-    if (resendOtpBtn) resendOtpBtn.disabled = true;
-
-    resendInterval = setInterval(() => {
-      resendCountdown--;
-      if (resendTimerText) resendTimerText.textContent = `Resend in ${resendCountdown}s`;
-      if (resendCountdown <= 0) {
-        clearInterval(resendInterval);
-        if (resendOtpBtn) resendOtpBtn.disabled = false;
-        if (resendTimerText) resendTimerText.textContent = 'Resend code';
-      }
-    }, 1000);
-  };
-
+  // Resend / Generate New Code Handler
   if (resendOtpBtn) {
     resendOtpBtn.addEventListener('click', async () => {
       if (!pendingRegistration.email) return;
+      if (resendOtpBtn) resendOtpBtn.disabled = true;
+      const originalText = resendTimerText ? resendTimerText.textContent : 'Generate New Code';
+      if (resendTimerText) resendTimerText.textContent = 'Generating…';
+
       try {
         const res = await fetch(`${API_BASE_URL}/api/auth/resend-otp`, {
           method: 'POST',
@@ -820,14 +919,20 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify({ email: pendingRegistration.email })
         });
         const data = await res.json();
+        if (resendOtpBtn) resendOtpBtn.disabled = false;
+        if (resendTimerText) resendTimerText.textContent = originalText;
+
         if (!res.ok) {
-          showOtpNotice(data.error || 'Unable to send verification email. Please try again.', 'error');
+          showOtpNotice(data.error || 'Unable to generate new code. Please try again.', 'error');
           return;
         }
-        startResendTimer();
+
+        setupDemoOtpDisplay(data);
         clearOtpBoxes();
-        showOtpNotice('A new verification code has been dispatched to your email.', 'info');
+        showOtpNotice('New verification code generated.', 'info');
       } catch {
+        if (resendOtpBtn) resendOtpBtn.disabled = false;
+        if (resendTimerText) resendTimerText.textContent = originalText;
         showOtpNotice('Unable to reach EXPIREDNOT server. Please check your internet connection.', 'error');
       }
     });
@@ -871,6 +976,8 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
+        if (otpTimerInterval) clearInterval(otpTimerInterval);
+
         sessionToken = data.session_token;
         sessionStorage.setItem(ACTIVE_TOKEN_KEY, sessionToken);
         currentPharmacy = data.user;
@@ -883,7 +990,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showScreen('dashboard');
           }, 350);
         } else {
-          showOtpNotice('Email verified ✓', 'success');
+          showOtpNotice('✓ Email verified', 'success');
           setTimeout(() => {
             if (pendingRegistration.isGoogle) {
               const googleConnectedPill = document.getElementById('googleConnectedPill');

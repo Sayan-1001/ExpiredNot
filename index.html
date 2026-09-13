@@ -544,7 +544,7 @@
             </div>
 
             <!-- ==========================================================
-                 STEP 2: EMAIL OTP VERIFICATION (SECURE 6-DIGIT INTERFACE)
+                 STEP 2: EMAIL OTP VERIFICATION (DEMO / PRESENTATION INTERFACE)
                  ========================================================== -->
             <div class="wizard-step-pane step-hidden" id="paneOtpVerify">
               <div class="step-header text-center">
@@ -554,14 +554,44 @@
                     <polyline points="9 12 11 14 15 10"></polyline>
                   </svg>
                 </div>
-                <h3 class="step-heading">Verify your email</h3>
-                <p class="step-subtext">
-                  We've sent a 6-digit verification code to <strong id="maskedEmailDisplay" class="text-gradient-highlight">your email</strong>. Check your inbox and enter the code below.
+                <div class="demo-verification-tag" id="demoVerificationTag">
+                  <span class="demo-tag-dot"></span>
+                  <span>PRESENTATION MODE — DEMO OTP</span>
+                </div>
+                <h3 class="step-heading" id="otpStepHeading">Verify your email</h3>
+                <p class="step-subtext" id="otpStepSubtext">
+                  We've generated a verification code for this demo.
                 </p>
               </div>
 
               <div class="otp-card-body">
                 
+                <!-- Displayed Demo OTP Box -->
+                <div class="demo-otp-banner" id="demoOtpBanner">
+                  <div class="demo-otp-banner-header">
+                    <span class="demo-otp-header-label">YOUR VERIFICATION CODE:</span>
+                    <button type="button" class="btn-copy-otp" id="copyOtpBtn" title="Copy verification code to clipboard">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                      <span id="copyOtpBtnText">Copy Code</span>
+                    </button>
+                  </div>
+                  <div class="demo-otp-code-container">
+                    <span class="demo-otp-hash">###</span>
+                    <span class="demo-otp-digits" id="demoOtpDisplay">483721</span>
+                    <span class="demo-otp-hash">###</span>
+                  </div>
+                  <p class="demo-otp-security-note">
+                    Demo verification: This code is displayed here because email delivery is not configured in the current presentation environment.
+                  </p>
+                </div>
+
+                <div class="otp-instruction-row">
+                  <span class="otp-input-prompt">Enter the 6-digit code below:</span>
+                </div>
+
                 <!-- 6 Individual Digit Inputs -->
                 <div class="otp-inputs-grid" id="otpInputsGrid">
                   <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-digit-box" data-idx="0" autofocus>
@@ -572,17 +602,26 @@
                   <input type="text" maxlength="1" inputmode="numeric" pattern="[0-9]*" class="otp-digit-box" data-idx="5">
                 </div>
 
+                <!-- Expiry Countdown Display -->
+                <div class="otp-timer-badge" id="otpTimerBadge">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                  <span id="otpExpiryCountdownText">Code expires in 10:00</span>
+                </div>
+
                 <div id="otpNotice" class="auth-notice" role="alert" aria-live="polite" hidden></div>
 
                 <button type="button" class="btn-primary btn-full-width" id="verifyOtpBtn">
                   <span id="verifyOtpBtnText">Verify Email →</span>
                 </button>
 
-                <!-- Resend Cooldown Handler -->
+                <!-- Resend / Generate New Code Handler -->
                 <div class="resend-otp-box">
-                  <span>Didn't receive the code?</span>
-                  <button type="button" class="btn-resend-otp" id="resendOtpBtn" disabled>
-                    <span id="resendTimerText">Resend in 30s</span>
+                  <span id="resendPromptLabel">Need a new code?</span>
+                  <button type="button" class="btn-resend-otp" id="resendOtpBtn">
+                    <span id="resendTimerText">Generate New Code</span>
                   </button>
                 </div>
 

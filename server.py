@@ -36,6 +36,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads", "bills")
 DB_PATH = os.path.join(BASE_DIR, "expirednot.db")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+DEMO_OTP_MODE = os.environ.get("DEMO_OTP_MODE", "true").strip().lower() in ("true", "1", "yes")
 
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
@@ -691,7 +692,8 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
             return self._send_json({
                 "google_client_id": g_client_id,
                 "google_configured": bool(g_client_id and "example" not in g_client_id),
-                "gemini_configured": bool(GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+                "gemini_configured": bool(GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")),
+                "demo_otp_mode": DEMO_OTP_MODE
             })
 
         elif path == '/api/auth/session':
@@ -883,16 +885,17 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                 otp_code = generate_secure_otp()
                 otp_h, otp_salt = hash_otp(otp_code)
                 now = int(time.time())
-                expires_at = now + (5 * 60)
+                expires_at = now + (10 * 60) if DEMO_OTP_MODE else now + (5 * 60)
                 
-                # Verify email delivery BEFORE saving active OTP state
-                sent_ok, err_reason = send_email_otp(email, otp_code)
-                if not sent_ok:
-                    return self._send_json({
-                        "error": "We couldn't send the verification email. Please try again.",
-                        "details": err_reason,
-                        "email_delivery_failed": True
-                    }, 502)
+                # Only attempt external email delivery if NOT in DEMO_OTP_MODE
+                if not DEMO_OTP_MODE:
+                    sent_ok, err_reason = send_email_otp(email, otp_code)
+                    if not sent_ok:
+                        return self._send_json({
+                            "error": "We couldn't send the verification email. Please try again.",
+                            "details": err_reason,
+                            "email_delivery_failed": True
+                        }, 502)
                 
                 cursor.execute('''
                     INSERT OR REPLACE INTO otps (email, otp_hash, salt, expires_at, attempts, created_at)
@@ -912,14 +915,19 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                 
                 conn.commit()
             
-            print(f"[SECURITY OTP DISPATCH] 6-Digit Email OTP dispatched for {email}", file=sys.stdout)
+            print(f"[SECURITY OTP REGISTER] OTP generated for {email}: {'[DEMO: ' + otp_code + ']' if DEMO_OTP_MODE else '[SENT BY EMAIL]'}", file=sys.stdout)
             
-            return self._send_json({
+            resp_data = {
                 "success": True,
-                "message": "Verification code sent to your email.",
+                "message": "Demo verification code generated." if DEMO_OTP_MODE else "Verification code sent to your email.",
                 "masked_email": mask_email(email),
-                "expires_in_seconds": 300
-            })
+                "expires_in_seconds": 600 if DEMO_OTP_MODE else 300,
+                "demo_mode": DEMO_OTP_MODE
+            }
+            if DEMO_OTP_MODE:
+                resp_data["demo_otp"] = otp_code
+                
+            return self._send_json(resp_data)
 
         elif path == '/api/auth/verify-otp':
             email = req_data.get('email', '').strip().lower()
@@ -938,7 +946,7 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                     
                 now = int(time.time())
                 if now > otp_record['expires_at']:
-                    return self._send_json({"error": "This verification code has expired. Request a new code."}, 400)
+                    return self._send_json({"error": "This verification code has expired. Generate a new code."}, 400)
                     
                 if otp_record['attempts'] >= 5:
                     return self._send_json({"error": "Too many failed attempts. Please request a new verification code."}, 429)
@@ -981,21 +989,22 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                 existing_otp = cursor.fetchone()
                 now = int(time.time())
                 
-                if existing_otp and (now - existing_otp['created_at']) < 30:
+                if not DEMO_OTP_MODE and existing_otp and (now - existing_otp['created_at']) < 30:
                     wait_time = 30 - (now - existing_otp['created_at'])
                     return self._send_json({"error": f"Please wait {wait_time}s before requesting a new code."}, 429)
                     
                 new_otp = generate_secure_otp()
                 new_h, new_salt = hash_otp(new_otp)
-                expires_at = now + (5 * 60)
+                expires_at = now + (10 * 60) if DEMO_OTP_MODE else now + (5 * 60)
                 
-                sent_ok, err_reason = send_email_otp(email, new_otp)
-                if not sent_ok:
-                    return self._send_json({
-                        "error": "We couldn't send the verification email. Please try again.",
-                        "details": err_reason,
-                        "email_delivery_failed": True
-                    }, 502)
+                if not DEMO_OTP_MODE:
+                    sent_ok, err_reason = send_email_otp(email, new_otp)
+                    if not sent_ok:
+                        return self._send_json({
+                            "error": "We couldn't send the verification email. Please try again.",
+                            "details": err_reason,
+                            "email_delivery_failed": True
+                        }, 502)
                 
                 cursor.execute('''
                     INSERT OR REPLACE INTO otps (email, otp_hash, salt, expires_at, attempts, created_at)
@@ -1003,11 +1012,18 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                 ''', (email, new_h, new_salt, expires_at, now))
                 conn.commit()
                 
-            print(f"[SECURITY OTP RESEND] New OTP dispatched for {email}", file=sys.stdout)
-            return self._send_json({
+            print(f"[SECURITY OTP RESEND] New code generated for {email}: {'[DEMO: ' + new_otp + ']' if DEMO_OTP_MODE else '[SENT BY EMAIL]'}", file=sys.stdout)
+            
+            resp_data = {
                 "success": True, 
-                "message": "New verification code sent to your email."
-            })
+                "message": "New verification code generated." if DEMO_OTP_MODE else "New verification code sent to your email.",
+                "expires_in_seconds": 600 if DEMO_OTP_MODE else 300,
+                "demo_mode": DEMO_OTP_MODE
+            }
+            if DEMO_OTP_MODE:
+                resp_data["demo_otp"] = new_otp
+                
+            return self._send_json(resp_data)
 
         elif path == '/api/auth/send-login-otp':
             email = req_data.get('email', '').strip().lower()
@@ -1022,21 +1038,22 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                 
                 cursor.execute("SELECT created_at FROM otps WHERE email = ?", (email,))
                 existing_otp = cursor.fetchone()
-                if existing_otp and (now - existing_otp['created_at']) < 30:
+                if not DEMO_OTP_MODE and existing_otp and (now - existing_otp['created_at']) < 30:
                     wait_time = 30 - (now - existing_otp['created_at'])
                     return self._send_json({"error": f"Please wait {wait_time}s before requesting a new code."}, 429)
                 
                 otp_code = generate_secure_otp()
                 otp_h, otp_salt = hash_otp(otp_code)
-                expires_at = now + (5 * 60)
+                expires_at = now + (10 * 60) if DEMO_OTP_MODE else now + (5 * 60)
                 
-                sent_ok, err_reason = send_email_otp(email, otp_code)
-                if not sent_ok:
-                    return self._send_json({
-                        "error": "We couldn't send the verification email. Please try again.",
-                        "details": err_reason,
-                        "email_delivery_failed": True
-                    }, 502)
+                if not DEMO_OTP_MODE:
+                    sent_ok, err_reason = send_email_otp(email, otp_code)
+                    if not sent_ok:
+                        return self._send_json({
+                            "error": "We couldn't send the verification email. Please try again.",
+                            "details": err_reason,
+                            "email_delivery_failed": True
+                        }, 502)
                 
                 if not user:
                     user_id = f"USR_{int(time.time())}_{secrets.token_hex(4)}"
@@ -1051,13 +1068,19 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                 ''', (email, otp_h, otp_salt, expires_at, now))
                 conn.commit()
                 
-            print(f"[SECURITY LOGIN OTP] Dispatched code for {email}", file=sys.stdout)
-            return self._send_json({
+            print(f"[SECURITY LOGIN OTP] Login code generated for {email}: {'[DEMO: ' + otp_code + ']' if DEMO_OTP_MODE else '[SENT BY EMAIL]'}", file=sys.stdout)
+            
+            resp_data = {
                 "success": True,
-                "message": "Login code sent to your email.",
+                "message": "Login code generated for demo." if DEMO_OTP_MODE else "Login code sent to your email.",
                 "masked_email": mask_email(email),
-                "expires_in_seconds": 300
-            })
+                "expires_in_seconds": 600 if DEMO_OTP_MODE else 300,
+                "demo_mode": DEMO_OTP_MODE
+            }
+            if DEMO_OTP_MODE:
+                resp_data["demo_otp"] = otp_code
+                
+            return self._send_json(resp_data)
 
         elif path == '/api/auth/login':
             identifier = req_data.get('identifier', '').strip()
