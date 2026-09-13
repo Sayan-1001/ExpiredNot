@@ -166,6 +166,18 @@ document.addEventListener('DOMContentLoaded', () => {
         showScreen('auth');
         return;
       }
+
+      // If Firebase Auth currentUser is present with password provider and not verified, reject access
+      if (window.firebaseAuth && window.firebaseAuth.currentUser) {
+        const u = window.firebaseAuth.currentUser;
+        const isPasswordProvider = u.providerData && u.providerData.some(p => p.providerId === 'password');
+        if (isPasswordProvider && !u.emailVerified) {
+          showScreen('signup');
+          goToOnboardingStep(2);
+          showOtpNotice('Please verify your email before continuing.', 'error');
+          return;
+        }
+      }
     }
 
     const screens = [
@@ -304,8 +316,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (signInButton) signInButton.disabled = true;
       if (signInBtnText) signInBtnText.textContent = 'Signing in…';
 
-      // 1. Attempt Firebase Authentication if available and identifier is an email
-      if (window.firebaseAuth && identifier.includes('@')) {
+      // 1. Attempt Firebase Authentication if identifier is an email
+      if (identifier.includes('@')) {
+        if (!window.firebaseAuth) {
+          if (signInButton) signInButton.disabled = false;
+          if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
+          showAuthNotice('Firebase Authentication is not ready. Please refresh the page.', 'error');
+          return;
+        }
+
         try {
           const userCredential = await window.firebaseAuth.signInWithEmailAndPassword(identifier, pass);
           const fbUser = userCredential.user;
@@ -313,7 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await fbUser.reload();
             if (!fbUser.emailVerified) {
               if (signInButton) signInButton.disabled = false;
-              if (signInBtnText) signInBtnText.textContent = 'Sign In';
+              if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
 
               pendingRegistration.email = fbUser.email;
               pendingRegistration.password = pass;
@@ -323,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
               showScreen('signup');
               goToOnboardingStep(2);
-              showOtpNotice('Your email has not been verified yet. Please check your inbox and click the verification link before signing in.', 'error');
+              showOtpNotice('Please verify your email before continuing.', 'error');
               return;
             }
 
@@ -359,27 +378,26 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
           }
         } catch (fbErr) {
-          console.warn('Firebase login check:', fbErr.code, fbErr.message);
+          if (signInButton) signInButton.disabled = false;
+          if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
+
+          console.warn('Firebase login error:', fbErr.code, fbErr.message);
           if (fbErr.code === 'auth/wrong-password' || fbErr.code === 'auth/invalid-credential') {
-            if (signInButton) signInButton.disabled = false;
-            if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
             showAuthNotice('Incorrect password. Please try again.', 'error');
-            return;
+          } else if (fbErr.code === 'auth/user-not-found') {
+            showAuthNotice('No account found with this email. Please check credentials or create an account.', 'error', true);
           } else if (fbErr.code === 'auth/invalid-email') {
-            if (signInButton) signInButton.disabled = false;
-            if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
             showAuthNotice('Please enter a valid email address.', 'error');
-            return;
           } else if (fbErr.code === 'auth/too-many-requests') {
-            if (signInButton) signInButton.disabled = false;
-            if (signInBtnText) signInBtnText.textContent = 'Sign in with Email & Password';
             showAuthNotice('Access to this account has been temporarily disabled due to many failed attempts.', 'error');
-            return;
+          } else {
+            showAuthNotice(fbErr.message || 'Authentication failed. Please check credentials.', 'error');
           }
+          return;
         }
       }
 
-      // 2. Server Authentication Fallback
+      // 2. Server Authentication Fallback for Phone / Mobile Number Identifiers
       try {
         const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
           method: 'POST',
@@ -398,6 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (maskedDisplay) maskedDisplay.textContent = maskEmail(data.email);
             showScreen('signup');
             goToOnboardingStep(2);
+            showOtpNotice('Please verify your email before continuing.', 'error');
             return;
           }
           showAuthNotice(data.error || 'Authentication failed. Please check credentials.', 'error', data.not_found);
@@ -996,7 +1015,7 @@ document.addEventListener('DOMContentLoaded', () => {
           } else {
             if (verifyOtpBtn) verifyOtpBtn.disabled = false;
             if (verifyOtpBtnText) verifyOtpBtnText.textContent = 'Check Verification';
-            showOtpNotice('Your email has not been verified yet. Please check your inbox and click the verification link.', 'error');
+            showOtpNotice('Your email is still not verified. Please click the verification link sent to your email.', 'error');
             return;
           }
         } else {
@@ -1030,7 +1049,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (currentUser) {
           await currentUser.sendEmailVerification();
-          showOtpNotice('A new verification email has been sent. Please check your inbox.', 'info');
+          showOtpNotice('Verification email sent. Please check your inbox.', 'info');
           startResendCooldown(60);
         } else {
           showOtpNotice('Unable to send verification email. Please enter your details and try again.', 'error');
@@ -1054,6 +1073,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // "Change Email" Handler
   if (changeEmailBtn) {
     changeEmailBtn.addEventListener('click', () => {
+      showScreen('signup');
       goToOnboardingStep(1);
     });
   }
@@ -2668,6 +2688,34 @@ document.addEventListener('DOMContentLoaded', () => {
     if (demoModeBanner) {
       demoModeBanner.hidden = true;
       demoModeBanner.style.display = 'none';
+    }
+
+    // Guard against unverified Firebase password accounts
+    if (window.firebaseAuth && window.firebaseAuth.currentUser) {
+      const fbUser = window.firebaseAuth.currentUser;
+      const isPasswordProvider = fbUser.providerData && fbUser.providerData.some(p => p.providerId === 'password');
+      if (isPasswordProvider) {
+        try {
+          await fbUser.reload();
+        } catch {}
+        if (!fbUser.emailVerified) {
+          sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+          localStorage.removeItem(ACTIVE_SESSION_KEY);
+          sessionStorage.removeItem(ACTIVE_TOKEN_KEY);
+          localStorage.removeItem(ACTIVE_TOKEN_KEY);
+          sessionToken = null;
+          currentPharmacy = null;
+
+          pendingRegistration.email = fbUser.email;
+          const maskedDisplay = document.getElementById('maskedEmailDisplay');
+          if (maskedDisplay) maskedDisplay.textContent = maskEmail(fbUser.email);
+
+          showScreen('signup');
+          goToOnboardingStep(2);
+          showOtpNotice('Please verify your email before continuing.', 'error');
+          return;
+        }
+      }
     }
 
     if (sessionToken) {
