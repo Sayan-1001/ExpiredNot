@@ -514,7 +514,7 @@ def call_gemini_multimodal_bill_parser(image_bytes, mime_type="image/jpeg"):
     api_key = GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
     
     if not api_key:
-        print("[BILL AI ENGINE] Gemini API key not in environment. Reporting not_configured.")
+        print("[BILL AI ENGINE] Gemini API key not in environment. Reporting not_configured.", file=sys.stderr)
         return {
             "success": False,
             "error": "Smart Bill Capture is not configured yet. Please configure GEMINI_API_KEY in your environment or enter bill details manually.",
@@ -533,17 +533,33 @@ def call_gemini_multimodal_bill_parser(image_bytes, mime_type="image/jpeg"):
         "Output strictly valid JSON with keys: distributor, seller_address, seller_phone, seller_gstin, buyer_name, buyer_address, buyer_gstin, invoice_no, invoice_date, due_date, payment_terms, subtotal, taxable_amount, cgst, sgst, igst, discount, total_amount, items."
     )
     
+    last_error_detail = "All models failed"
+    
     try:
         import base64
+        import ssl
         b64_data = base64.b64encode(image_bytes).decode('utf-8')
         
+        # Build resilient SSL Context
+        ssl_ctx = None
+        try:
+            try:
+                import certifi
+                ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+            except Exception:
+                ssl_ctx = ssl.create_default_context()
+        except Exception:
+            try:
+                ssl_ctx = ssl._create_unverified_context()
+            except Exception:
+                ssl_ctx = None
+        
         gemini_models = [
+            'gemini-3.6-flash',
+            'gemini-flash-latest',
             'gemini-3.5-flash',
             'gemini-3.5-flash-lite',
-            'gemini-3.6-flash',
-            'gemini-3.7-flash',
-            'gemini-2.5-flash',
-            'gemini-1.5-flash'
+            'gemini-3.7-flash'
         ]
         
         payload = {
@@ -568,41 +584,96 @@ def call_gemini_multimodal_bill_parser(image_bytes, mime_type="image/jpeg"):
         
         for model in gemini_models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            print(f"[GEMINI BILL AI] Requesting inference via model '{model}' (mime: {mime_type}, payload: {len(image_bytes)} bytes)...")
             try:
                 req = urllib.request.Request(
                     url,
                     data=json.dumps(payload).encode('utf-8'),
                     headers={'Content-Type': 'application/json'}
                 )
-                with urllib.request.urlopen(req, timeout=25) as resp:
+                try:
+                    resp_obj = urllib.request.urlopen(req, context=ssl_ctx, timeout=35)
+                except Exception as net_err:
+                    if 'CERTIFICATE_VERIFY_FAILED' in str(net_err) or 'certificate verify failed' in str(net_err).lower():
+                        unverified_ctx = ssl._create_unverified_context()
+                        resp_obj = urllib.request.urlopen(req, context=unverified_ctx, timeout=35)
+                    else:
+                        raise net_err
+                
+                with resp_obj as resp:
                     data = json.loads(resp.read().decode('utf-8'))
                     candidates = data.get('candidates', [])
                     if candidates:
-                        text_content = candidates[0].get('content', {}).get('parts', [{}])[0].get('text', '{}')
-                        raw_json = json.loads(text_content)
-                        normalized = normalize_extracted_bill(raw_json)
-                        if normalized:
-                            print(f"[GEMINI BILL AI SUCCESS] Extracted {len(normalized['items'])} items via {model}")
-                            return normalized
+                        parts = candidates[0].get('content', {}).get('parts', [])
+                        raw_text = ""
+                        for p in parts:
+                            if 'text' in p and p['text']:
+                                raw_text += p['text']
+                        
+                        # Strip markdown fences if present
+                        cleaned_text = raw_text.strip()
+                        if cleaned_text.startswith('```'):
+                            lines = cleaned_text.splitlines()
+                            if len(lines) >= 2 and lines[0].startswith('```'):
+                                lines = lines[1:]
+                            if len(lines) >= 1 and lines[-1].strip() == '```':
+                                lines = lines[:-1]
+                            cleaned_text = '\n'.join(lines).strip()
+                        
+                        try:
+                            raw_json = json.loads(cleaned_text)
+                            normalized = normalize_extracted_bill(raw_json)
+                            if normalized:
+                                print(f"[GEMINI BILL AI SUCCESS] Successfully extracted {len(normalized['items'])} items via '{model}'")
+                                return normalized
+                            else:
+                                print(f"[GEMINI BILL AI WARN] Model '{model}' returned empty items list: {cleaned_text[:200]}", file=sys.stderr)
+                        except json.JSONDecodeError as jde:
+                            print(f"[GEMINI BILL AI ERROR] JSON parsing failed for model '{model}': {jde} | text: {cleaned_text[:200]}", file=sys.stderr)
             except urllib.error.HTTPError as he:
-                if he.code in (404, 400, 429):
-                    continue
-                else:
-                    raise he
+                err_body = ""
+                try:
+                    err_body = he.read().decode('utf-8')
+                    err_json = json.loads(err_body)
+                    err_msg = err_json.get('error', {}).get('message', err_body)
+                except Exception:
+                    err_msg = str(he)
+                
+                cat = "HTTP Error"
+                if he.code == 401:
+                    cat = "401 Authentication / Invalid API Key"
+                elif he.code == 403:
+                    cat = "403 Forbidden / Key Restricted or IP Blocked"
+                elif he.code == 404:
+                    cat = "404 Model Not Found / Unsupported Endpoint"
+                elif he.code == 400:
+                    cat = "400 Malformed Request Payload"
+                elif he.code == 429:
+                    cat = "429 Quota / Rate Limit Exceeded"
+                elif he.code in (500, 503):
+                    cat = f"{he.code} Google Service Unavailable"
+                
+                print(f"[GEMINI BILL AI ERROR] Model '{model}' failed -> {cat}: {err_msg}", file=sys.stderr)
+                last_error_detail = f"{cat}: {err_msg}"
+                continue
             except Exception as e:
+                print(f"[GEMINI BILL AI ERROR] Model '{model}' failed -> Exception ({type(e).__name__}): {e}", file=sys.stderr)
+                last_error_detail = f"{type(e).__name__}: {e}"
                 continue
 
     except Exception as e:
-        print(f"[GEMINI BILL AI ERROR]: {e}", file=sys.stderr)
+        print(f"[GEMINI BILL AI CRITICAL ERROR]: {e}", file=sys.stderr)
         return {
             "success": False,
             "error": "Unable to confidently extract this bill. Please review and enter details manually.",
+            "diagnostic_info": str(e),
             "items": []
         }
 
     return {
         "success": False,
         "error": "Unable to confidently extract this bill. Some information could not be read clearly.",
+        "diagnostic_info": last_error_detail,
         "items": []
     }
 
@@ -847,7 +918,7 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                     sf.write(file_bytes)
                 
                 relative_file_url = f"/uploads/bills/{saved_filename}"
-                print(f"[BILL STORE] Saved original invoice ({len(file_bytes)} bytes) to {saved_path}")
+                print(f"[BILL UPLOAD] Successfully received invoice: filename='{file_name}', mime='{file_mime}', size={len(file_bytes)} bytes, saved_as='{saved_filename}'")
                 
                 # Analyze via Gemini Multimodal Document AI
                 extracted_data = call_gemini_multimodal_bill_parser(file_bytes, file_mime)
