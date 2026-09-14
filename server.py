@@ -597,7 +597,7 @@ def call_gemini_multimodal_bill_parser(image_bytes, mime_type="image/jpeg"):
                         'x-goog-api-key': api_key
                     }
                 )
-                with urllib.request.urlopen(req, context=ssl_ctx, timeout=35) as resp:
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=60) as resp:
                     data = json.loads(resp.read().decode('utf-8'))
                     candidates = data.get('candidates', [])
                     if candidates:
