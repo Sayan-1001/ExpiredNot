@@ -392,7 +392,7 @@ def normalize_extracted_bill(raw_data):
     if not isinstance(raw_data, dict):
         return None
     
-    items_raw = raw_data.get('items') or raw_data.get('line_items') or raw_data.get('products') or []
+    items_raw = raw_data.get('items') or raw_data.get('line_items') or raw_data.get('products') or raw_data.get('medicines') or []
     if not isinstance(items_raw, list):
         items_raw = []
         
@@ -443,9 +443,13 @@ def normalize_extracted_bill(raw_data):
         except (ValueError, TypeError):
             line_total = round(quantity * purchase_rate, 2)
 
-        conf = str(it.get('conf') or it.get('verification_status') or 'high').lower()
-        if 'need' in conf or 'unverif' in conf or not batch_no or not expiry_date:
+        conf = str(it.get('conf') or it.get('confidence') or 'high').lower()
+        needs_verif = bool(it.get('needs_verification') or not batch_no or not expiry_date or 'need' in conf or 'low' in conf or 'unverif' in conf)
+        
+        if 'low' in conf or 'need' in conf or not batch_no or not expiry_date:
             conf = 'needs_verification'
+        elif 'med' in conf:
+            conf = 'medium'
         else:
             conf = 'high'
 
@@ -454,6 +458,8 @@ def normalize_extracted_bill(raw_data):
             "generic_name": it.get('generic_name') or None,
             "brand": it.get('brand') or None,
             "manufacturer": it.get('manufacturer') or it.get('mfg_by') or None,
+            "strength": it.get('strength') or None,
+            "dosage_form": it.get('dosage_form') or it.get('form') or None,
             "pack": it.get('pack') or it.get('pack_size') or '10s',
             "batch_no": batch_no,
             "mfg_date": it.get('mfg_date') or it.get('manufacturing_date') or None,
@@ -466,7 +472,8 @@ def normalize_extracted_bill(raw_data):
             "discount": discount,
             "tax_pct": tax_pct,
             "line_total": line_total,
-            "conf": conf
+            "conf": conf,
+            "needs_verification": needs_verif
         })
 
     if not normalized_items:
@@ -494,6 +501,7 @@ def normalize_extracted_bill(raw_data):
         "buyer_gstin": raw_data.get('buyer_gstin') or buyer_dict.get('gstin') or None,
         "invoice_no": raw_data.get('invoice_no') or raw_data.get('bill_no') or f"INV-{secrets.token_hex(3).upper()}",
         "invoice_date": raw_data.get('invoice_date') or raw_data.get('bill_date') or time.strftime('%Y-%m-%d'),
+        "purchase_date": raw_data.get('purchase_date') or None,
         "due_date": raw_data.get('due_date') or None,
         "payment_terms": raw_data.get('payment_terms') or None,
         "subtotal": float(raw_data.get('subtotal', 0) or 0),
@@ -502,6 +510,7 @@ def normalize_extracted_bill(raw_data):
         "sgst": float(raw_data.get('sgst', 0) or 0),
         "igst": float(raw_data.get('igst', 0) or 0),
         "discount": float(raw_data.get('discount', 0) or 0),
+        "other_charges": float(raw_data.get('other_charges', 0) or 0),
         "total_amount": round(total_amount, 2),
         "items": normalized_items
     }
@@ -525,12 +534,12 @@ def call_gemini_multimodal_bill_parser(image_bytes, mime_type="image/jpeg"):
     system_instruction = (
         "You are EXPIREDNOT's high-precision pharmacy purchase bill intelligence engine. "
         "Extract ONLY what is visibly printed on the invoice document. NEVER invent, hallucinate, or substitute medicine names. "
-        "Preserve exact printed product characters (e.g. if printed 'ABC-500 TAB', output 'ABC-500 TAB', do not change to Paracetamol). "
+        "Preserve exact printed product characters (e.g. if printed 'ABC-650 TAB', output 'ABC-650 TAB', do not change to Paracetamol). "
         "Extract SELLER (name, address, gstin, phone, dl_number), BUYER (pharmacy name, address, gstin, phone), "
-        "INVOICE (invoice_no, invoice_date, due_date, payment_terms), TOTALS (subtotal, taxable_amount, cgst, sgst, igst, discount, total_amount), "
-        "and all line items (name, generic_name, brand, manufacturer, pack, batch_no, mfg_date, expiry_date [format YYYY-MM], quantity, free_qty, purchase_rate, mrp, discount, tax_pct, line_total, conf ['high' or 'needs_verification']). "
-        "If a field is missing or partially unreadable, set value to null and conf to 'needs_verification'. "
-        "Output strictly valid JSON with keys: distributor, seller_address, seller_phone, seller_gstin, buyer_name, buyer_address, buyer_gstin, invoice_no, invoice_date, due_date, payment_terms, subtotal, taxable_amount, cgst, sgst, igst, discount, total_amount, items."
+        "INVOICE (invoice_no, invoice_date, purchase_date, due_date, payment_terms), TOTALS (subtotal, taxable_amount, cgst, sgst, igst, discount, other_charges, total_amount), "
+        "and all line items (name, generic_name, brand, manufacturer, strength, dosage_form, pack, batch_no, mfg_date, expiry_date [format YYYY-MM], quantity, free_qty, purchase_rate, mrp, discount, tax_pct, line_total, conf ['high', 'medium', or 'needs_verification'], needs_verification [true/false]). "
+        "If a field is missing or partially unreadable, set value to null and needs_verification to true. "
+        "Output strictly valid JSON with keys: distributor, seller_address, seller_phone, seller_gstin, seller_dl, buyer_name, buyer_address, buyer_phone, buyer_gstin, invoice_no, invoice_date, purchase_date, due_date, payment_terms, subtotal, taxable_amount, cgst, sgst, igst, discount, other_charges, total_amount, items."
     )
     
     last_error_detail = "All models failed"
@@ -540,26 +549,20 @@ def call_gemini_multimodal_bill_parser(image_bytes, mime_type="image/jpeg"):
         import ssl
         b64_data = base64.b64encode(image_bytes).decode('utf-8')
         
-        # Build resilient SSL Context
-        ssl_ctx = None
+        # Build strict verified SSL Context using certifi CA bundle or system CA store
         try:
-            try:
-                import certifi
-                ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-            except Exception:
-                ssl_ctx = ssl.create_default_context()
+            import certifi
+            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
         except Exception:
-            try:
-                ssl_ctx = ssl._create_unverified_context()
-            except Exception:
-                ssl_ctx = None
+            ssl_ctx = ssl.create_default_context()
         
         gemini_models = [
+            'gemini-3.8-flash',
+            'gemini-3.7-flash',
             'gemini-3.6-flash',
             'gemini-flash-latest',
             'gemini-3.5-flash',
-            'gemini-3.5-flash-lite',
-            'gemini-3.7-flash'
+            'gemini-3.5-flash-lite'
         ]
         
         payload = {
@@ -591,16 +594,7 @@ def call_gemini_multimodal_bill_parser(image_bytes, mime_type="image/jpeg"):
                     data=json.dumps(payload).encode('utf-8'),
                     headers={'Content-Type': 'application/json'}
                 )
-                try:
-                    resp_obj = urllib.request.urlopen(req, context=ssl_ctx, timeout=35)
-                except Exception as net_err:
-                    if 'CERTIFICATE_VERIFY_FAILED' in str(net_err) or 'certificate verify failed' in str(net_err).lower():
-                        unverified_ctx = ssl._create_unverified_context()
-                        resp_obj = urllib.request.urlopen(req, context=unverified_ctx, timeout=35)
-                    else:
-                        raise net_err
-                
-                with resp_obj as resp:
+                with urllib.request.urlopen(req, context=ssl_ctx, timeout=35) as resp:
                     data = json.loads(resp.read().decode('utf-8'))
                     candidates = data.get('candidates', [])
                     if candidates:
