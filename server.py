@@ -842,18 +842,17 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
             self.wfile.write(content)
 
     def do_POST(self):
+        url_parsed = urllib.parse.urlparse(self.path)
+        path = url_parsed.path
+        
         try:
-            url_parsed = urllib.parse.urlparse(self.path)
-            path = url_parsed.path
+            cl_val = self.headers.get('Content-Length', 0)
+            content_length = int(cl_val) if cl_val else 0
+        except (ValueError, TypeError):
+            content_length = 0
             
-            try:
-                cl_val = self.headers.get('Content-Length', 0)
-                content_length = int(cl_val) if cl_val else 0
-            except (ValueError, TypeError):
-                content_length = 0
-                
-            post_body = self.rfile.read(content_length) if content_length > 0 else b''
-            content_type = self.headers.get('Content-Type', '')
+        post_body = self.rfile.read(content_length) if content_length > 0 else b''
+        content_type = self.headers.get('Content-Type', '')
         
         if path == '/api/bills/analyze' and 'multipart/form-data' in content_type:
             user = self._get_auth_user()
@@ -1455,11 +1454,6 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                     cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
                     conn.commit()
             return self._send_json({"success": True, "message": "Logged out."})
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return self._send_json({"error": f"Internal server error: {str(e)}"}, 500)
 
         return self._send_json({"error": "Endpoint not found."}, 404)
 
