@@ -842,13 +842,18 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
             self.wfile.write(content)
 
     def do_POST(self):
-        url_parsed = urllib.parse.urlparse(self.path)
-        path = url_parsed.path
-        
-        content_length = int(self.headers.get('Content-Length', 0))
-        post_body = self.rfile.read(content_length)
-        
-        content_type = self.headers.get('Content-Type', '')
+        try:
+            url_parsed = urllib.parse.urlparse(self.path)
+            path = url_parsed.path
+            
+            try:
+                cl_val = self.headers.get('Content-Length', 0)
+                content_length = int(cl_val) if cl_val else 0
+            except (ValueError, TypeError):
+                content_length = 0
+                
+            post_body = self.rfile.read(content_length) if content_length > 0 else b''
+            content_type = self.headers.get('Content-Type', '')
         
         if path == '/api/bills/analyze' and 'multipart/form-data' in content_type:
             user = self._get_auth_user()
@@ -1451,6 +1456,11 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                     conn.commit()
             return self._send_json({"success": True, "message": "Logged out."})
 
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return self._send_json({"error": f"Internal server error: {str(e)}"}, 500)
+
         return self._send_json({"error": "Endpoint not found."}, 404)
 
 def app(environ, start_response):
@@ -1479,10 +1489,10 @@ def app(environ, start_response):
             for key, val in req_env.items():
                 if key.startswith('HTTP_'):
                     h_name = key[5:].replace('_', '-').title()
-                    self.headers.add_header(h_name, val)
+                    self.headers.add_header(h_name, str(val))
                 elif key in ('CONTENT_TYPE', 'CONTENT_LENGTH'):
                     h_name = key.replace('_', '-').title()
-                    self.headers.add_header(h_name, val)
+                    self.headers.add_header(h_name, str(val))
             
             if self.command == 'GET':
                 self.do_GET()
@@ -1508,9 +1518,20 @@ def app(environ, start_response):
         def end_headers(self):
             pass
 
-    handler = WSGIHandler(environ)
-    start_response(handler.status_line, handler.headers_set)
-    return [handler.output.getvalue()]
+    try:
+        handler = WSGIHandler(environ)
+        start_response(handler.status_line, handler.headers_set)
+        return [handler.output.getvalue()]
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        err_body = json.dumps({"error": f"WSGI Handler Error: {str(exc)}"}).encode('utf-8')
+        start_response("500 Internal Server Error", [
+            ("Content-Type", "application/json"),
+            ("Content-Length", str(len(err_body))),
+            ("Access-Control-Allow-Origin", "*")
+        ])
+        return [err_body]
 
 def run_server():
     server_address = ('', PORT)
