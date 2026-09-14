@@ -1295,3 +1295,165 @@ body {
   .otp-inputs-grid { gap: 0.35rem; }
   .otp-digit-box { width: 34px; height: 44px; font-size: 1.1rem; }
 }
+/* --- Expiry & Low Stock Reminder Styles --- */
+
+.alert-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+/* Expiry urgency colors (FEFO) */
+.badge-expired {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border-left: 4px solid #ef4444;
+}
+
+.badge-critical {
+  background-color: #ffedd5;
+  color: #9a3412;
+  border-left: 4px solid #f97316;
+}
+
+.badge-warning {
+  background-color: #fef9c3;
+  color: #854d0e;
+  border-left: 4px solid #eab308;
+}
+
+.badge-safe {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+/* Low Stock Alert */
+.badge-low-stock {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  font-weight: bold;
+}
+
+/* ==========================================================================
+   PROFILE AVATAR & DP MODAL STYLES
+   ========================================================================== */
+
+/* Make the topbar circle look clickable */
+.user-avatar-circle {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-size: cover;
+  background-position: center;
+}
+
+.user-avatar-circle:hover {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px #059669;
+}
+
+/* Modal DP Container */
+.profile-modal-body {
+  padding: 1.25rem 1.5rem;
+}
+
+.profile-dp-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  gap: 0.65rem;
+}
+
+.profile-dp-wrapper {
+  position: relative;
+  cursor: pointer;
+}
+
+.profile-dp-circle {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
+  color: #ffffff;
+  font-size: 2rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 3px solid #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.profile-dp-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-camera-badge {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+}
+
+.dp-actions-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Details Grid */
+.profile-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+  background: #f8fafc;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.profile-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.profile-detail-item.full-width {
+  grid-column: span 2;
+}
+
+.detail-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+}
+
+.detail-value {
+  font-size: 0.875rem;
+  color: #1e293b;
+  word-break: break-word;
+}
+
+.detail-value.mono-text {
+  font-family: monospace;
+  letter-spacing: 0.5px;
+}

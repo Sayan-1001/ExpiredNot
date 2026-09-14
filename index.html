@@ -718,6 +718,7 @@
                       >
                     </div>
                   </div>
+
                 </div>
 
                 <div class="wizard-actions-row">
@@ -1798,6 +1799,18 @@
           <label for="mMedName" class="form-label">Medicine Name *</label>
           <input type="text" id="mMedName" class="form-input" placeholder="e.g. Augmentin 625 Duo Tablet" required>
         </div>
+        <div class="form-group">
+          <label for="mDemandTier" class="form-label">Demand Category (Stock Alert Margin)</label>
+          <div class="input-wrapper select-wrapper">
+            <select id="mDemandTier" class="form-input select-input">
+              <option value="AUTO">✨ Auto-Detect from Medicine Name</option>
+              <option value="HIGH_DEMAND">High Demand (Common / Fast Moving — Alert at ≤50)</option>
+              <option value="MEDIUM_DEMAND">Medium Demand (Standard / Maintenance — Alert at ≤20)</option>
+              <option value="LOW_DEMAND">Low Demand (Specialist / Rare — Alert at ≤5)</option>
+            </select>
+          </div>
+        </div>
+
 
         <div class="form-row-2col">
           <div class="form-group">
@@ -1845,6 +1858,90 @@
           <button type="submit" class="btn-primary">Save to Stock</button>
         </div>
       </form>
+    </div>
+  </div>
+  
+  <!-- ==========================================================================
+       MODAL: PHARMACY PROFILE & DP
+       ========================================================================== -->
+  <div id="profileModal" class="modal-wrapper view-hidden" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+    <div class="modal-backdrop" id="profileModalBackdrop"></div>
+    <div class="modal-card gradient-border-card" style="max-width: 520px;">
+      
+      <div class="modal-header">
+        <h3 class="modal-title" id="profileModalTitle">Pharmacy Profile</h3>
+        <button type="button" class="btn-close-modal" id="closeProfileModalBtn">×</button>
+      </div>
+
+      <div class="profile-modal-body">
+        
+        <!-- Avatar / DP Section with Camera Overlay -->
+        <div class="profile-dp-container">
+          <div class="profile-dp-wrapper" id="profileDpTrigger" title="Click to upload profile photo">
+            <div class="profile-dp-circle" id="profileDpCircle">
+              <span id="profileModalInitials">PH</span>
+              <img id="profileModalImg" src="" alt="Profile DP" style="display: none;">
+            </div>
+            <div class="profile-camera-badge">📷</div>
+          </div>
+          
+          <input type="file" id="profilePhotoInput" accept="image/*" style="display: none;">
+          
+          <div class="dp-actions-row">
+            <button type="button" class="btn-secondary" style="height: 28px; font-size: 0.75rem; padding: 0 0.6rem;" id="changePhotoBtn">Change Photo</button>
+            <button type="button" class="btn-secondary" style="height: 28px; font-size: 0.75rem; padding: 0 0.6rem; color: var(--status-critical);" id="removePhotoBtn" hidden>Remove</button>
+          </div>
+        </div>
+
+        <!-- Pharmacy & Owner Details Display (Read-Only) -->
+        <div class="profile-details-grid">
+          <div class="profile-detail-item">
+            <span class="detail-label">Chemist / Shop Name</span>
+            <strong class="detail-value" id="profShopName">—</strong>
+          </div>
+
+          <div class="profile-detail-item">
+            <span class="detail-label">Drug Licence No. (D.L. No.)</span>
+            <strong class="detail-value mono-text" id="profDlNumber">—</strong>
+          </div>
+
+          <div class="profile-detail-item">
+            <span class="detail-label">Pharmacy Type</span>
+            <span class="detail-value" id="profPharmacyType">—</span>
+          </div>
+
+          <div class="profile-detail-item">
+            <span class="detail-label">Pharmacy Mobile</span>
+            <span class="detail-value" id="profPharmacyPhone">—</span>
+          </div>
+
+          <div class="profile-detail-item full-width">
+            <span class="detail-label">Shop Address</span>
+            <span class="detail-value" id="profFullAddress">—</span>
+          </div>
+
+          <div class="profile-detail-item">
+            <span class="detail-label">Responsible Person</span>
+            <strong class="detail-value" id="profOwnerName">—</strong>
+          </div>
+
+          <div class="profile-detail-item">
+            <span class="detail-label">Role</span>
+            <span class="detail-value" id="profRole">—</span>
+          </div>
+
+          <div class="profile-detail-item">
+            <span class="detail-label">Owner Mobile</span>
+            <span class="detail-value" id="profOwnerMobile">—</span>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer" style="justify-content: flex-end;">
+        <button type="button" class="btn-primary" id="doneProfileBtn" style="min-width: 90px;">Done</button>
+      </div>
+
     </div>
   </div>
 
@@ -2013,6 +2110,12 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <script src="firebase-config.js"></script>
 
+
+  <!-- Real In-Browser OCR Engine (Tesseract.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <script src="utils/inventoryRules.js"></script>
   <script src="app.js"></script>
+  
 </body>
 </html>
