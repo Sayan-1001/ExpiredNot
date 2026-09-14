@@ -56,12 +56,122 @@ document.addEventListener('DOMContentLoaded', () => {
     return headers;
   };
 
+  /**
+   * Automatic Firebase -> Backend Session Bridge:
+   * Obtains a fresh Firebase ID Token via getIdToken(forceRefresh) and exchanges it with /api/auth/firebase
+   * to ensure a valid backend SQLite session token exists in sessionStorage and localStorage.
+   */
+  const ensureBackendAuthSession = async (forceRefresh = false) => {
+    if (sessionToken && !forceRefresh) {
+      return sessionToken;
+    }
+
+    let fbUser = window.firebaseAuth ? window.firebaseAuth.currentUser : null;
+    if (!fbUser && window.firebaseAuth && typeof window.firebaseAuth.onAuthStateChanged === 'function') {
+      fbUser = await new Promise(resolve => {
+        const unsubscribe = window.firebaseAuth.onAuthStateChanged(user => {
+          if (typeof unsubscribe === 'function') unsubscribe();
+          resolve(user);
+        });
+        setTimeout(() => resolve(window.firebaseAuth.currentUser || null), 1500);
+      });
+    }
+
+    if (!fbUser) {
+      return sessionToken;
+    }
+
+    try {
+      // Obtain fresh Firebase ID Token
+      const idToken = await fbUser.getIdToken(forceRefresh);
+
+      const payload = {
+        email: fbUser.email,
+        uid: fbUser.uid,
+        name: fbUser.displayName || (currentPharmacy ? currentPharmacy.owner_name : ''),
+        id_token: idToken
+      };
+
+      // Restore existing pharmacy details if backend restarted
+      if (currentPharmacy) {
+        if (currentPharmacy.shop_name) payload.shop_name = currentPharmacy.shop_name;
+        if (currentPharmacy.dl_number) payload.dl_number = currentPharmacy.dl_number;
+        if (currentPharmacy.shop_address) payload.shop_address = currentPharmacy.shop_address;
+        if (currentPharmacy.city) payload.city = currentPharmacy.city;
+        if (currentPharmacy.state) payload.state = currentPharmacy.state;
+        if (currentPharmacy.pincode) payload.pincode = currentPharmacy.pincode;
+        if (currentPharmacy.pharmacy_type) payload.pharmacy_type = currentPharmacy.pharmacy_type;
+        if (currentPharmacy.owner_name) payload.owner_name = currentPharmacy.owner_name;
+        if (currentPharmacy.role) payload.role = currentPharmacy.role;
+        if (currentPharmacy.mobile) payload.mobile = currentPharmacy.mobile;
+      }
+
+      const bridgeRes = await fetch(`${API_BASE_URL}/api/auth/firebase`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (bridgeRes.ok) {
+        const data = await bridgeRes.json();
+        if (data.session_token) {
+          sessionToken = data.session_token;
+          sessionStorage.setItem(ACTIVE_TOKEN_KEY, sessionToken);
+          localStorage.setItem(ACTIVE_TOKEN_KEY, sessionToken);
+          if (data.user) {
+            currentPharmacy = data.user;
+            sessionStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(currentPharmacy));
+            localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(currentPharmacy));
+          }
+          console.log('[AUTH BRIDGE] Successfully created/refreshed backend session token.');
+          return sessionToken;
+        }
+      }
+    } catch (err) {
+      console.warn('[AUTH BRIDGE] Error refreshing backend session token:', err);
+    }
+
+    return sessionToken;
+  };
+
+  /**
+   * Wrapper around fetch() that attaches backend session authorization headers and
+   * automatically re-bridges Firebase -> backend on HTTP 401 Unauthorized with a single retry.
+   */
+  const authenticatedFetch = async (url, options = {}, retryCount = 0) => {
+    if (!sessionToken) {
+      await ensureBackendAuthSession(false);
+    }
+
+    const opt = { ...options };
+    const baseHeaders = { 'Content-Type': 'application/json' };
+    opt.headers = {
+      ...baseHeaders,
+      ...(options.headers || {}),
+      ...(sessionToken ? { 'Authorization': `Bearer ${sessionToken}` } : {})
+    };
+
+    let res = await fetch(url, opt);
+
+    // Auto-Retry ONCE on 401 Unauthorized by re-bridging Firebase -> Backend
+    if (res.status === 401 && retryCount === 0) {
+      console.log('[AUTH BRIDGE] Backend returned 401 Unauthorized. Auto re-bridging Firebase session...');
+      const freshToken = await ensureBackendAuthSession(true);
+      if (freshToken) {
+        opt.headers['Authorization'] = `Bearer ${freshToken}`;
+        res = await fetch(url, opt);
+      }
+    }
+
+    return res;
+  };
+
   const loadPharmacyData = async (pharmacyId) => {
     if (!pharmacyId || isDemoMode) return;
     
     // 1. Fetch real batches from SQLite backend
     try {
-      const res = await fetch(`${API_BASE_URL}/api/inventory`, { headers: getAuthHeaders() });
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/inventory`);
       if (res.ok) {
         const data = await res.json();
         if (data.batches) {
@@ -87,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 2. Fetch real bills from SQLite backend
     try {
-      const billsRes = await fetch(`${API_BASE_URL}/api/bills`, { headers: getAuthHeaders() });
+      const billsRes = await authenticatedFetch(`${API_BASE_URL}/api/bills`);
       if (billsRes.ok) {
         const billsData = await billsRes.json();
         if (billsData.bills) {
@@ -2614,9 +2724,8 @@ document.addEventListener('DOMContentLoaded', () => {
       };
 
       try {
-        const res = await fetch(`${API_BASE_URL}/api/bills/confirm`, {
+        const res = await authenticatedFetch(`${API_BASE_URL}/api/bills/confirm`, {
           method: 'POST',
-          headers: getAuthHeaders(),
           body: JSON.stringify(payload)
         });
         const data = await res.json();

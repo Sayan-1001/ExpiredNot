@@ -1292,6 +1292,17 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
             email = req_data.get('email', '').strip().lower()
             uid = req_data.get('uid', '').strip()
             name = req_data.get('name', '').strip()
+            id_token = req_data.get('id_token') or req_data.get('idToken') or ''
+            shop_name = req_data.get('shop_name', '').strip()
+            dl_number = req_data.get('dl_number', '').strip()
+            shop_address = req_data.get('shop_address', '').strip()
+            city = req_data.get('city', '').strip()
+            state = req_data.get('state', '').strip()
+            pincode = req_data.get('pincode', '').strip()
+            pharmacy_type = req_data.get('pharmacy_type', 'Retail Pharmacy')
+            owner_name = req_data.get('owner_name', name).strip()
+            role = req_data.get('role', 'Owner')
+            mobile = req_data.get('mobile', '').strip()
             
             if not email or '@' not in email:
                 return self._send_json({"error": "A valid email address is required."}, 400)
@@ -1302,7 +1313,7 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                 user = cursor.fetchone()
                 now = int(time.time())
                 
-                if user and user['setup_completed']:
+                if user:
                     token = secrets.token_hex(32)
                     cursor.execute("INSERT INTO sessions VALUES (?, ?, ?, ?)", (token, user['id'], now + (30 * 86400), now))
                     cursor.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (user['id'],))
@@ -1310,19 +1321,17 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                     return self._send_json({
                         "success": True,
                         "existing_user": True,
-                        "needs_setup": False,
+                        "needs_setup": not bool(user['setup_completed']),
                         "session_token": token,
                         "user": sanitize_user(user)
                     })
                 else:
-                    user_id = user['id'] if user else f"USR_FB_{int(time.time())}_{secrets.token_hex(4)}"
-                    if not user:
-                        cursor.execute('''
-                            INSERT INTO users (id, email, email_verified, setup_completed, owner_name, auth_provider, created_at)
-                            VALUES (?, ?, 1, 0, ?, 'firebase', ?)
-                        ''', (user_id, email, name, now))
-                    else:
-                        cursor.execute("UPDATE users SET email_verified = 1, auth_provider = 'firebase' WHERE id = ?", (user_id,))
+                    setup_done = 1 if (shop_name and dl_number) else 0
+                    user_id = f"USR_FB_{int(time.time())}_{secrets.token_hex(4)}"
+                    cursor.execute('''
+                        INSERT INTO users (id, email, email_verified, setup_completed, shop_name, dl_number, shop_address, city, state, pincode, pharmacy_type, owner_name, role, mobile, auth_provider, created_at)
+                        VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'firebase', ?)
+                    ''', (user_id, email, setup_done, shop_name or None, dl_number or None, shop_address or None, city or None, state or None, pincode or None, pharmacy_type, owner_name, role, mobile or None, now))
                     
                     token = secrets.token_hex(32)
                     cursor.execute("INSERT INTO sessions VALUES (?, ?, ?, ?)", (token, user_id, now + (30 * 86400), now))
@@ -1333,10 +1342,10 @@ class ExpiredNotHandler(BaseHTTPRequestHandler):
                     
                     return self._send_json({
                         "success": True,
-                        "new_user": True,
-                        "needs_setup": True,
+                        "new_user": not bool(setup_done),
+                        "needs_setup": not bool(setup_done),
                         "email": email,
-                        "name": name,
+                        "name": owner_name,
                         "session_token": token,
                         "user": sanitize_user(u_row)
                     })
