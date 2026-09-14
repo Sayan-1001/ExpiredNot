@@ -520,7 +520,7 @@ def call_gemini_multimodal_bill_parser(image_bytes, mime_type="image/jpeg"):
     Calls Google Gemini Multimodal REST API with image payload and strict structured JSON schema.
     Returns structured invoice header + item list. NEVER invents or uses fallback dummy data.
     """
-    api_key = GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
+    api_key = (GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "") or "").strip().strip('\"\'')
     
     if not api_key:
         print("[BILL AI ENGINE] Gemini API key not in environment. Reporting not_configured.", file=sys.stderr)
@@ -592,7 +592,10 @@ def call_gemini_multimodal_bill_parser(image_bytes, mime_type="image/jpeg"):
                 req = urllib.request.Request(
                     url,
                     data=json.dumps(payload).encode('utf-8'),
-                    headers={'Content-Type': 'application/json'}
+                    headers={
+                        'Content-Type': 'application/json',
+                        'x-goog-api-key': api_key
+                    }
                 )
                 with urllib.request.urlopen(req, context=ssl_ctx, timeout=35) as resp:
                     data = json.loads(resp.read().decode('utf-8'))
