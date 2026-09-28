@@ -82,7 +82,7 @@
 
       <!-- Single Primary Action Button with Smooth Transition -->
       <div class="welcome-action">
-        <button id="enterAppBtn" class="btn-welcome shimmer-btn" type="button">
+        <button id="enterAppBtn" class="btn-welcome shimmer-btn" type="button" onclick="window.showScreen ? window.showScreen('auth') : null">
           <span class="shimmer-effect" aria-hidden="true"></span>
           <span class="btn-welcome-text">Welcome</span>
           <svg class="welcome-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -718,7 +718,6 @@
                       >
                     </div>
                   </div>
-
                 </div>
 
                 <div class="wizard-actions-row">
@@ -886,6 +885,25 @@
           </div>
         </div>
 
+        <!-- Center: Global Medicine & Inventory Search Bar -->
+        <div class="topbar-center">
+          <div class="global-search-wrapper" id="globalSearchWrapper">
+            <div class="global-search-box">
+              <svg class="global-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="globalMedicineSearchInput" class="global-search-input" placeholder="Search medicine, batch, supplier or invoice..." autocomplete="off">
+              <button type="button" class="global-search-clear-btn" id="globalSearchClearBtn" hidden title="Clear search">×</button>
+            </div>
+
+            <!-- Floating Search Results Dropdown -->
+            <div class="global-search-dropdown view-hidden" id="globalSearchDropdown" role="listbox" aria-label="Search Results">
+              <div id="globalSearchResultsContainer"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- Right: Actions & User Menu -->
         <div class="topbar-right">
           
@@ -906,7 +924,7 @@
             <span>+ Add Medicine</span>
           </button>
 
-          <!-- Notification Bell -->
+          <!-- Notification Bell & Dropdown -->
           <div class="notification-wrapper">
             <button type="button" class="topbar-icon-btn" id="notifBellBtn" title="Real Event Notifications" aria-label="Notifications">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -915,18 +933,38 @@
               </svg>
               <span class="notif-badge" id="notifBadge" hidden>0</span>
             </button>
+
+            <!-- Floating Notification Dropdown Panel -->
+            <div class="notif-dropdown-card view-hidden" id="notifDropdown" role="dialog" aria-label="Notifications Dropdown">
+              <div class="notif-dropdown-header">
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <strong style="font-size:0.875rem; color:var(--color-text-main);">Notifications</strong>
+                  <span class="notif-unread-count-pill" id="notifDropdownUnreadCount" hidden>0 new</span>
+                </div>
+                <button type="button" class="btn-text-link" id="markAllNotifsReadBtn" style="font-size:0.75rem; color:var(--brand-primary); font-weight:600; cursor:pointer;">Mark all read</button>
+              </div>
+              <div class="notif-dropdown-body" id="notifDropdownList">
+                <div class="empty-state-small" id="emptyDropdownNotifs" style="padding:1.5rem 1rem;">
+                  <p style="font-size:0.8125rem; font-weight:600; margin-bottom:0.25rem;">No unread notifications</p>
+                  <span style="font-size:0.725rem; color:var(--color-text-muted);">You're all caught up! Real alerts will appear here when inventory events occur.</span>
+                </div>
+              </div>
+              <div class="notif-dropdown-footer">
+                <button type="button" class="btn-view-all-notifs" id="viewAllNotifsBtn">
+                  <span>View All Notifications in Center →</span>
+                </button>
+              </div>
+            </div>
           </div>
 
-          <!-- User Menu & Sign Out -->
+          <!-- User Menu & Profile -->
           <div class="user-menu-box">
-            <div class="user-avatar-circle" id="userAvatarInitials">PH</div>
-            <button type="button" class="btn-logout" id="logoutBtn" title="Sign out of pharmacy">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                <polyline points="16 17 21 12 16 7"></polyline>
-                <line x1="21" y1="12" x2="9" y2="12"></line>
-              </svg>
-              <span>Log Out</span>
+            <button type="button" class="user-avatar-btn" id="userProfileBtn" title="Open Pharmacy Profile & Account">
+              <div class="user-avatar-circle" id="userAvatarInitials">PH</div>
+              <div class="user-avatar-text-box">
+                <span class="user-avatar-name" id="userAvatarName">Pharmacy Owner</span>
+                <span class="user-avatar-role" id="userAvatarRole">Profile & Settings</span>
+              </div>
             </button>
           </div>
 
@@ -979,9 +1017,15 @@
             <span class="sidebar-badge-highlight">Bill Intelligence</span>
           </button>
 
+          <button type="button" class="sidebar-nav-btn" data-tab="billhistory">
+            <span class="sidebar-icon">🧾</span>
+            <span class="sidebar-label">Bill History</span>
+            <span class="sidebar-count-pill" id="sideCountBillHistory" hidden>0</span>
+          </button>
+
           <button type="button" class="sidebar-nav-btn" data-tab="inventory">
             <span class="sidebar-icon">📦</span>
-            <span class="sidebar-label">Stock Inventory</span>
+            <span class="sidebar-label">Medicine Inventory</span>
             <span class="sidebar-count-pill" id="sideCountInventory" hidden>0</span>
           </button>
 
@@ -1343,37 +1387,24 @@
 
             <!-- Side-by-Side Grid (Left: Original Bill Preview | Right: Extracted Table) -->
             <div class="side-by-side-ocr-layout">
-              <!-- Left: Document Preview with Zoom & Medicine Table Selector -->
+              
+              <!-- Left: Document Preview -->
               <div class="doc-preview-pane">
-                <div class="doc-preview-header" style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem;">
-                  <div>
-                    <span>Original Document Record</span>
-                    <span class="doc-preview-status" id="docPreviewStatusLabel">Interactive</span>
-                  </div>
-                  
-                  <!-- ZOOM & CROP CONTROLS -->
-                  <div class="zoom-toolbar" style="display: flex; gap: 0.35rem; align-items: center;">
-                    <button type="button" class="btn-secondary btn-zoom" id="zoomInBtn" title="Zoom In">🔍 +</button>
-                    <button type="button" class="btn-secondary btn-zoom" id="zoomOutBtn" title="Zoom Out">🔍 −</button>
-                    <button type="button" class="btn-secondary btn-zoom" id="rotateBillBtn" title="Rotate 90°">⟳ Rotate</button>
-                    <button type="button" class="btn-primary" id="cropScanBtn" style="height: 26px; font-size: 0.72rem; padding: 0 0.6rem;">
-                      ✂️ Select & Scan Table
-                    </button>
-                  </div>
+                <div class="doc-preview-header">
+                  <span>Original Document Record</span>
+                  <span class="doc-preview-status" id="docPreviewStatusLabel">Secure Link</span>
                 </div>
-
-                <!-- Guidance prompt for the user -->
-                <div id="cropInstructionBadge" style="background: #ecfdf5; color: #047857; font-size: 0.75rem; padding: 4px 8px; border-bottom: 1px solid #a7f3d0; display: none;">
-                  💡 <strong>Tip:</strong> Drag your mouse over <strong>just the medicine rows</strong> to zoom and scan without GST footer!
-                </div>
-
-                <div class="doc-preview-sheet" id="docPreviewSheet" style="position: relative; overflow: auto; max-height: 520px;">
-                  <div id="originalBillImgContainer" style="position: relative; display: inline-block; width: 100%; text-align: center;">
-                    <img id="originalBillPreviewImg" src="" alt="Uploaded Bill Document" style="max-width: 100%; display: none; user-select: none; -webkit-user-drag: none;">
-                    <!-- Canvas for Interactive Crop / Zoom Box -->
-                    <canvas id="cropCanvasOverlay" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+                <div class="doc-preview-sheet" id="docPreviewSheet">
+                  <div class="simulated-bill-header">
+                    <div class="sim-bill-logo" id="simBillLogo">ORIGINAL INVOICE</div>
+                    <div class="sim-bill-meta" id="simBillMeta">TAX INVOICE FILE</div>
                   </div>
-                  <div class="simulated-bill-table" id="simBillTable"></div>
+                  <div id="originalBillImgContainer" style="margin-top: 0.5rem; text-align: center;">
+                    <img id="originalBillPreviewImg" src="" alt="Uploaded Bill Document" style="max-width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--color-border); display: none;">
+                  </div>
+                  <div class="simulated-bill-table" id="simBillTable">
+                    <!-- Text preview if image is loading -->
+                  </div>
                 </div>
               </div>
 
@@ -1428,9 +1459,91 @@
         </section>
 
         <!-- ====================================================================
+             PANEL 2B: PERMANENT & SEARCHABLE BILL HISTORY
+             ==================================================================== -->
+        <section class="content-panel panel-hidden" id="paneBillHistory" aria-label="Bill History and Archive">
+          
+          <div class="bill-history-top-header">
+            <div>
+              <h2 class="section-heading text-gradient-brand">Bill History</h2>
+              <p class="section-subtext">View and find all your previously uploaded purchase bills.</p>
+            </div>
+            <div class="header-actions-group">
+              <button type="button" class="btn-primary" id="billHistoryUploadNavBtn" style="height: 38px; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0 1rem; font-size: 0.8125rem;">
+                <span>+ Upload New Bill</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Advanced Multi-Field Search & Filter Toolbar -->
+          <div class="bill-history-filter-card gradient-border-card" style="margin-top: 1.25rem;">
+            <div class="bill-history-search-row">
+              <div class="bill-search-input-wrapper">
+                <span class="bill-search-icon">🔍</span>
+                <input type="text" id="billHistorySearchInput" class="bill-search-input" placeholder="Search by stockist, shop name, place, invoice, medicine, batch, GSTIN, DL...">
+                <button type="button" id="billHistoryClearSearchBtn" class="bill-search-clear-btn" hidden title="Clear search">✕</button>
+              </div>
+              <div class="bill-filter-controls">
+                <div class="filter-select-group">
+                  <label for="billHistoryDateFilter" class="filter-mini-label">Date:</label>
+                  <select id="billHistoryDateFilter" class="form-select filter-select">
+                    <option value="all">All Time</option>
+                    <option value="today">Today</option>
+                    <option value="7days">Last 7 Days</option>
+                    <option value="30days">Last 30 Days</option>
+                  </select>
+                </div>
+                <div class="filter-select-group">
+                  <label for="billHistorySortFilter" class="filter-mini-label">Sort:</label>
+                  <select id="billHistorySortFilter" class="form-select filter-select">
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="highest_amount">Highest Amount</option>
+                    <option value="lowest_amount">Lowest Amount</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Search Stats & Quick Filter Chips Bar -->
+            <div class="bill-search-status-bar">
+              <span id="billHistoryResultsCount" class="bill-results-badge">Loading purchase records...</span>
+              <div id="billHistoryActiveQueryTag" class="active-query-pill" hidden>
+                <span>Searching: "<b id="billHistoryActiveQueryText"></b>"</span>
+                <button type="button" id="billHistoryRemoveQueryBtn" class="btn-remove-pill">×</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bills Grid / Cards Container -->
+          <div id="billHistoryGridContainer" style="margin-top: 1.25rem;">
+            <div class="bill-history-grid" id="billHistoryGrid">
+              <!-- Rendered dynamically -->
+            </div>
+
+            <!-- Empty State (Zero Bills Ingested) -->
+            <div class="empty-state-card gradient-border-subtle" id="billHistoryEmptyState" hidden>
+              <div class="empty-state-icon">🧾</div>
+              <h3 class="empty-state-title">No Purchase Bills Found</h3>
+              <p class="empty-state-desc">You haven't added any wholesale purchase bills yet. Upload your invoice images or PDFs to auto-extract medicines and maintain a permanent searchable archive.</p>
+              <button type="button" class="btn-primary" id="emptyBillHistoryUploadBtn" style="margin-top: 1rem;">+ Upload Your First Bill</button>
+            </div>
+
+            <!-- No Search Results State -->
+            <div class="empty-state-card gradient-border-subtle" id="billHistoryNoResultsState" hidden>
+              <div class="empty-state-icon">🔍</div>
+              <h3 class="empty-state-title">No Matching Bills Found</h3>
+              <p class="empty-state-desc" id="billHistoryNoResultsDesc">No purchase bills match your current search query or date filter.</p>
+              <button type="button" class="btn-secondary" id="billHistoryResetFiltersBtn" style="margin-top: 0.75rem;">Reset All Filters</button>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- ====================================================================
              PANEL 3: MEDICINE INVENTORY
              ==================================================================== -->
-        <section class="content-panel panel-hidden" id="paneInventory" aria-label="Stock Inventory">
+        <section class="content-panel panel-hidden" id="paneInventory" aria-label="Medicine Inventory">
           
           <div class="inventory-controls-header">
             <div class="inventory-search-box">
@@ -1557,17 +1670,55 @@
         <!-- ====================================================================
              PANEL 6: STOCK CLEARANCE & RETURNS
              ==================================================================== -->
-        <section class="content-panel panel-hidden" id="paneReturns" aria-label="Distributor Returns">
+        <section class="content-panel panel-hidden" id="paneReturns" aria-label="Stock Clearance and Distributor Returns">
           
           <div class="section-intro-header">
             <h2 class="section-heading text-gradient-brand">Stock Clearance & Distributor Returns</h2>
-            <p class="section-subtext">Automatically groups expiring batches by wholesale stockist to generate return debit notes before cutoff deadlines.</p>
+            <p class="section-subtext">Manage near-expiry batches: mark items as SOLD at counter or group expiring batches by wholesale stockist for debit note returns.</p>
           </div>
 
+          <!-- Section 1: Priority Stock Clearance (Near Expiry) -->
+          <div class="dash-card gradient-border-card" style="margin-bottom: 1.5rem;">
+            <div class="dash-card-header">
+              <div>
+                <h3>Priority Stock Clearance (Near Expiry)</h3>
+                <p style="font-size:0.75rem; color:var(--color-text-muted); margin-top:0.2rem;">Batches expiring within 90 days. Dispense via FEFO or mark as SOLD when sold to patients.</p>
+              </div>
+            </div>
+            <div id="clearanceListContent">
+              <div class="empty-state-small" id="emptyClearanceState">
+                <p>No near-expiry stock requiring priority clearance.</p>
+                <span>All active batches in inventory have more than 90 days of shelf life remaining.</span>
+              </div>
+              <div class="inventory-table-wrapper" id="clearanceTableWrapper" hidden>
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Medicine Name</th>
+                      <th>Batch No.</th>
+                      <th>Expiry Date</th>
+                      <th>Days Left</th>
+                      <th>Available Stock</th>
+                      <th>MRP / Rate</th>
+                      <th style="text-align:right;">Clearance Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="clearanceTableBody">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 2: Eligible Expiry Return Claims -->
           <div class="returns-container" id="returnsContainer">
-            <div class="dash-card gradient-border-card">
+            <div class="dash-card gradient-border-subtle">
               <div class="dash-card-header">
-                <h3>Eligible Expiry Return Claims</h3>
+                <div>
+                  <h3>Distributor Return Claims (Debit Notes)</h3>
+                  <p style="font-size:0.75rem; color:var(--color-text-muted); margin-top:0.2rem;">Organized by stockist for supplier return credit adjustments.</p>
+                </div>
               </div>
               <div id="returnsListContent">
                 <div class="empty-state-small" id="emptyReturnsState">
@@ -1718,16 +1869,21 @@
              ==================================================================== -->
         <section class="content-panel panel-hidden" id="paneNotifications" aria-label="Notifications Feed">
           
-          <div class="section-intro-header">
-            <h2 class="section-heading text-gradient-brand">Notifications & Alerts</h2>
-            <p class="section-subtext">Real-time alerts triggered exclusively when actual inventory events occur.</p>
+          <div class="section-intro-header-with-action">
+            <div>
+              <h2 class="section-heading text-gradient-brand">Notifications & Alerts</h2>
+              <p class="section-subtext">Real-time alerts triggered exclusively when actual inventory events occur.</p>
+            </div>
+            <button type="button" class="btn-secondary" id="markAllNotifsFeedBtn" style="height:36px; font-size:0.8125rem;">
+              <span>✓ Mark All as Read</span>
+            </button>
           </div>
 
           <div class="dash-card gradient-border-card">
             <div id="notificationsListContent">
               <div class="empty-state-small" id="emptyNotifsState">
-                <p>No unread notifications.</p>
-                <span>You're all caught up! Real alerts will appear here when medicines approach expiry.</span>
+                <p>No notifications yet.</p>
+                <span>You're all caught up! Real alerts will appear here when bills are added, stock is sold, or medicines approach expiry.</span>
               </div>
               <div class="notifications-feed" id="notificationsFeed" hidden></div>
             </div>
@@ -1812,6 +1968,7 @@
           <label for="mMedName" class="form-label">Medicine Name *</label>
           <input type="text" id="mMedName" class="form-input" placeholder="e.g. Augmentin 625 Duo Tablet" required>
         </div>
+<<<<<<< HEAD
         <div class="form-group">
           <label for="mDemandTier" class="form-label">Demand Category (Stock Alert Margin)</label>
           <div class="input-wrapper select-wrapper">
@@ -1824,6 +1981,8 @@
           </div>
         </div>
 
+=======
+>>>>>>> 8328e7a6a60184d811dac1cafd69311e92dd1546
 
         <div class="form-row-2col">
           <div class="form-group">
@@ -1871,124 +2030,6 @@
           <button type="submit" class="btn-primary">Save to Stock</button>
         </div>
       </form>
-    </div>
-  </div>
-  
-  <!-- ==========================================================================
-       MODAL: PHARMACY PROFILE & DP
-       ========================================================================== -->
-  <div id="profileModal" class="modal-wrapper view-hidden" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
-    <div class="modal-backdrop" id="profileModalBackdrop"></div>
-    <div class="modal-card gradient-border-card" style="max-width: 520px;">
-      
-      <div class="modal-header">
-        <h3 class="modal-title" id="profileModalTitle">Pharmacy Profile</h3>
-        <button type="button" class="btn-close-modal" id="closeProfileModalBtn">×</button>
-      </div>
-
-      <div class="profile-modal-body">
-        
-        <!-- Avatar / DP Section with Camera Overlay -->
-        <div class="profile-dp-container">
-          <div class="profile-dp-wrapper" id="profileDpTrigger" title="Click to upload profile photo">
-            <div class="profile-dp-circle" id="profileDpCircle">
-              <span id="profileModalInitials">PH</span>
-              <img id="profileModalImg" src="" alt="Profile DP" style="display: none;">
-            </div>
-            <div class="profile-camera-badge">📷</div>
-          </div>
-          
-          <input type="file" id="profilePhotoInput" accept="image/*" style="display: none;">
-          
-          <div class="dp-actions-row">
-            <button type="button" class="btn-secondary" style="height: 28px; font-size: 0.75rem; padding: 0 0.6rem;" id="changePhotoBtn">Change Photo</button>
-            <button type="button" class="btn-secondary" style="height: 28px; font-size: 0.75rem; padding: 0 0.6rem; color: var(--status-critical);" id="removePhotoBtn" hidden>Remove</button>
-          </div>
-        </div>
-
-        <!-- Pharmacy & Owner Details Display (Read-Only) -->
-        <div class="profile-details-grid">
-          <!-- ============================================================
-             OWNER-ONLY STAFF & WORKERS DIRECTORY
-             ============================================================ -->
-        <div id="profileStaffSection" class="profile-staff-box" style="display: none; margin-top: 1rem;">
-          <div class="staff-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <div>
-              <span class="detail-label" style="color: #059669; font-weight: 800;">🔒 Owner Access Only</span>
-              <h4 style="font-size: 0.95rem; font-weight: 700; color: #1e293b; margin: 0;">Shop Staff & Workers</h4>
-            </div>
-            <button type="button" class="btn-secondary" id="addStaffBtn" style="height: 26px; font-size: 0.72rem; padding: 0 0.5rem;">
-              + Add Worker
-            </button>
-          </div>
-
-          <!-- Quick Add Worker Form (Hidden by default, toggled by "+ Add Worker") -->
-          <div id="quickAddStaffForm" style="display: none; background: #f0fdf4; border: 1px dashed #86efac; padding: 0.65rem; border-radius: 6px; margin-bottom: 0.65rem;">
-            <div style="display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 0.4rem; align-items: center;">
-              <input type="text" id="staffNewName" class="form-input" style="height: 28px; font-size: 0.75rem; padding: 0 0.4rem;" placeholder="Worker Name">
-              <select id="staffNewRole" class="form-input select-input" style="height: 28px; font-size: 0.75rem; padding: 0 0.2rem;">
-                <option value="Pharmacist">Pharmacist</option>
-                <option value="Store Manager">Store Manager</option>
-                <option value="Sales Counter">Sales Counter</option>
-                <option value="Delivery/Boy">Delivery Staff</option>
-              </select>
-              <input type="tel" id="staffNewMobile" class="form-input phone-field" style="height: 28px; font-size: 0.75rem; padding: 0 0.4rem;" placeholder="10-digit Mobile">
-              <button type="button" class="btn-primary" id="saveStaffBtn" style="height: 28px; font-size: 0.72rem; padding: 0 0.6rem;">Save</button>
-            </div>
-          </div>
-
-          <!-- List of Workers -->
-          <div id="staffListContainer" style="display: flex; flex-direction: column; gap: 0.4rem;">
-            <!-- Dynamically rendered workers -->
-          </div>
-        </div>
-          <div class="profile-detail-item">
-            <span class="detail-label">Chemist / Shop Name</span>
-            <strong class="detail-value" id="profShopName">—</strong>
-          </div>
-
-          <div class="profile-detail-item">
-            <span class="detail-label">Drug Licence No. (D.L. No.)</span>
-            <strong class="detail-value mono-text" id="profDlNumber">—</strong>
-          </div>
-
-          <div class="profile-detail-item">
-            <span class="detail-label">Pharmacy Type</span>
-            <span class="detail-value" id="profPharmacyType">—</span>
-          </div>
-
-          <div class="profile-detail-item">
-            <span class="detail-label">Pharmacy Mobile</span>
-            <span class="detail-value" id="profPharmacyPhone">—</span>
-          </div>
-
-          <div class="profile-detail-item full-width">
-            <span class="detail-label">Shop Address</span>
-            <span class="detail-value" id="profFullAddress">—</span>
-          </div>
-
-          <div class="profile-detail-item">
-            <span class="detail-label">Responsible Person</span>
-            <strong class="detail-value" id="profOwnerName">—</strong>
-          </div>
-
-          <div class="profile-detail-item">
-            <span class="detail-label">Role</span>
-            <span class="detail-value" id="profRole">—</span>
-          </div>
-
-          <div class="profile-detail-item">
-            <span class="detail-label">Owner Mobile</span>
-            <span class="detail-value" id="profOwnerMobile">—</span>
-          </div>
-        </div>
-
-      </div>
-
-      <div class="modal-footer" style="justify-content: flex-end;">
-        <button type="button" class="btn-primary" id="doneProfileBtn" style="min-width: 90px;">Done</button>
-      </div>
-
     </div>
   </div>
 
@@ -2152,17 +2193,467 @@
     </div>
   </div>
 
+  <!-- ==========================================================================
+       MODAL 5: STOCK CLEARANCE — MARK AS SOLD CONFIRMATION
+       ========================================================================== -->
+  <div id="soldStockModal" class="modal-wrapper view-hidden" role="dialog" aria-modal="true" aria-labelledby="soldModalTitle">
+    <div class="modal-backdrop" id="soldStockBackdrop"></div>
+    <div class="modal-card gradient-border-card" style="max-width: 480px;">
+      <div class="modal-header" style="border-bottom: 1px solid var(--color-border); padding-bottom: 0.85rem;">
+        <div>
+          <h3 class="modal-title" id="soldModalTitle" style="color: #9f1239; display: flex; align-items: center; gap: 0.5rem;">
+            <span>🏷️</span>
+            <span>Mark Stock as Sold</span>
+          </h3>
+          <p style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.2rem;">Record medicine sale to deduct from active stock and log in sales history.</p>
+        </div>
+        <button type="button" class="btn-close-modal" id="closeSoldModalBtn">×</button>
+      </div>
+
+      <form id="soldStockForm" class="modal-form" novalidate style="padding-top: 1rem;">
+        <input type="hidden" id="soldModalBatchId" value="">
+
+        <!-- Medicine Summary Card -->
+        <div class="sold-batch-summary-box">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
+            <div>
+              <strong style="font-size: 0.95rem; color: var(--color-text-main);" id="soldModalMedName">Augmentin 625 Duo</strong>
+              <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.15rem;">
+                Batch: <span class="table-batch-pill" id="soldModalBatchNo">AUG-9821</span>
+              </div>
+            </div>
+            <span class="risk-pill warning" id="soldModalExpiryPill">22d left</span>
+          </div>
+
+          <div class="sold-batch-meta-grid" style="margin-top: 0.75rem; padding-top: 0.65rem; border-top: 1px dashed var(--color-border);">
+            <div>
+              <span class="meta-label">Available in Stock</span>
+              <strong class="meta-val" id="soldModalAvailableQty">20 units</strong>
+            </div>
+            <div>
+              <span class="meta-label">Unit MRP / Rate</span>
+              <strong class="meta-val" id="soldModalRateVal">₹204.00</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quantity Selection -->
+        <div class="form-group" style="margin-top: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+            <label for="soldModalQtyInput" class="form-label" style="margin-bottom: 0;">Quantity Being Sold *</label>
+            <span style="font-size: 0.725rem; color: var(--color-text-muted);">Max: <strong id="soldModalMaxQtyText">20</strong> units</span>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input 
+              type="number" 
+              id="soldModalQtyInput" 
+              class="form-input mono-input" 
+              min="1" 
+              step="1" 
+              value="1" 
+              required
+              style="font-size: 1.1rem; font-weight: 700; text-align: center; max-width: 120px;"
+            >
+            <div class="quick-qty-pills" style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+              <button type="button" class="btn-quick-qty" data-qty="1">1</button>
+              <button type="button" class="btn-quick-qty" data-qty="5">5</button>
+              <button type="button" class="btn-quick-qty" data-qty="half">Half</button>
+              <button type="button" class="btn-quick-qty" data-qty="all">All</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Calculated Sale Value -->
+        <div class="sold-value-preview-card">
+          <span style="font-size: 0.8125rem; color: var(--color-text-muted);">Estimated Sale Value:</span>
+          <strong style="font-size: 1.15rem; color: #059669; font-family: var(--font-mono);" id="soldModalTotalValue">₹204.00</strong>
+        </div>
+
+        <!-- Sale Notes -->
+        <div class="form-group" style="margin-top: 0.85rem;">
+          <label for="soldModalNotes" class="form-label">Notes (Optional)</label>
+          <input type="text" id="soldModalNotes" class="form-input" placeholder="e.g. Counter sale / Prescription #RX-1029">
+        </div>
+
+        <div class="modal-footer" style="margin-top: 1.25rem;">
+          <button type="button" class="btn-secondary" id="cancelSoldBtn">Cancel</button>
+          <button type="submit" class="btn-sold-action" id="confirmSoldBtn">
+            <span>🏷️ Mark as Sold</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       MODAL 6: COMPLETE PHARMACY PROFILE & ACCOUNT
+       ========================================================================== -->
+  <div id="profileModal" class="modal-wrapper view-hidden" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+    <div class="modal-backdrop" id="profileModalBackdrop"></div>
+    <div class="modal-card gradient-border-card" style="max-width: 540px;">
+      <div class="modal-header" style="border-bottom: 1px solid var(--color-border); padding-bottom: 0.85rem;">
+        <div>
+          <h3 class="modal-title" id="profileModalTitle">Pharmacy Profile & Account</h3>
+          <p style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.2rem;">Manage verified chemist credentials, license details, and profile photo.</p>
+        </div>
+        <button type="button" class="btn-close-modal" id="closeProfileModalBtn">×</button>
+      </div>
+
+      <div class="profile-modal-body" style="padding-top: 1rem;">
+        
+        <!-- User Identity Header Card -->
+        <div class="profile-identity-card">
+          <div class="profile-avatar-container">
+            <div class="profile-avatar-large" id="profileModalAvatar">PH</div>
+            <button type="button" class="btn-avatar-camera" id="profilePhotoTriggerBtn" title="Upload / Change Profile Photo">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+            </button>
+            <input type="file" id="profilePhotoFileInput" accept="image/png,image/jpeg,image/webp" style="display:none;">
+          </div>
+          <div class="profile-identity-info">
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              <strong style="font-size: 1.05rem; color: var(--color-text-main);" id="profileModalOwnerName">Rajesh Sharma</strong>
+              <span class="user-role-pill" id="profileModalTypeBadge">Retail Chemist</span>
+            </div>
+            <div style="font-size: 0.8125rem; color: var(--color-text-muted); margin-top: 0.2rem;" id="profileModalEmail">rajesh@example.com</div>
+            <div style="font-size: 0.8125rem; color: var(--color-text-muted);" id="profileModalMobile">+91 9876543210</div>
+            <div class="profile-photo-actions" style="margin-top: 0.4rem;">
+              <button type="button" class="btn-text-action" id="profilePhotoChangeBtn">Change Photo</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- View Mode: Pharmacy Details -->
+        <div id="profileViewMode" style="margin-top: 1rem;">
+          <div class="dash-card gradient-border-subtle" style="padding: 1rem; background: var(--color-bg);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <strong style="font-size: 0.8125rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted);">Licence & Pharmacy Info</strong>
+              <button type="button" class="btn-text-link" id="toggleEditProfileBtn" style="font-size: 0.75rem; color: var(--brand-primary); font-weight: 600; cursor:pointer;">✎ Edit Details</button>
+            </div>
+            <div class="profile-info-grid">
+              <div class="profile-info-row">
+                <span class="profile-info-label">Shop Name</span>
+                <strong class="profile-info-value" id="profileModalShopName">Medicare Chemist & Druggist</strong>
+              </div>
+              <div class="profile-info-row">
+                <span class="profile-info-label">Drug Licence No.</span>
+                <strong class="profile-info-value mono-val" id="profileModalDlNumber">DL-20B/94812</strong>
+              </div>
+              <div class="profile-info-row">
+                <span class="profile-info-label">Pharmacy Type</span>
+                <span class="profile-info-value" id="profileModalPharmacyType">Retail Pharmacy</span>
+              </div>
+              <div class="profile-info-row">
+                <span class="profile-info-label">Address</span>
+                <span class="profile-info-value" id="profileModalAddress">Shop #4, Market Complex</span>
+              </div>
+              <div class="profile-info-row">
+                <span class="profile-info-label">Location</span>
+                <span class="profile-info-value" id="profileModalCityState">Mumbai, Maharashtra - 400001</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Edit Mode: Pharmacy Details Form (Hidden by default) -->
+        <form id="profileEditForm" class="profile-edit-form view-hidden" novalidate style="margin-top: 1rem;">
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label class="form-label">Owner / Chemist Name *</label>
+              <input type="text" id="editOwnerName" class="form-input" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Mobile Number</label>
+              <input type="tel" id="editMobile" class="form-input" placeholder="e.g. 9876543210">
+            </div>
+          </div>
+
+          <div class="form-row-2col">
+            <div class="form-group">
+              <label class="form-label">Pharmacy / Shop Name *</label>
+              <input type="text" id="editShopName" class="form-input" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Drug Licence No. (D.L. No.) *</label>
+              <input type="text" id="editDlNumber" class="form-input mono-input" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Shop Full Address</label>
+            <input type="text" id="editShopAddress" class="form-input" placeholder="e.g. Shop 4, Ground Floor, Central Plaza">
+          </div>
+
+          <div class="form-row-3col">
+            <div class="form-group">
+              <label class="form-label">City</label>
+              <input type="text" id="editCity" class="form-input">
+            </div>
+            <div class="form-group">
+              <label class="form-label">State</label>
+              <input type="text" id="editState" class="form-input">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Pincode</label>
+              <input type="text" id="editPincode" class="form-input mono-input" maxlength="6">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Pharmacy Type</label>
+            <div class="input-wrapper select-wrapper">
+              <select id="editPharmacyType" class="form-input select-input">
+                <option value="Retail Pharmacy">Retail Pharmacy</option>
+                <option value="Hospital Pharmacy">Hospital / Clinical Pharmacy</option>
+                <option value="Wholesale & Retail">Wholesale & Retail Druggist</option>
+                <option value="Generic Medicine Store">Generic Medicine Store</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+            <button type="button" class="btn-secondary" id="cancelEditProfileBtn">Cancel</button>
+            <button type="submit" class="btn-primary" id="saveProfileBtn">Save Profile</button>
+          </div>
+        </form>
+
+        <!-- Sign Out Action Section -->
+        <div class="profile-signout-section" style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.75rem; color: var(--color-text-muted);">End active pharmacy session</span>
+          <button type="button" class="btn-profile-signout" id="profileModalSignOutBtn">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Sign Out</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       MODAL 7: DETAILED PURCHASE BILL & ORIGINAL DOCUMENT VIEWER
+       ========================================================================== -->
+  <div id="billDetailModal" class="modal-wrapper view-hidden" role="dialog" aria-modal="true" aria-labelledby="billDetailModalTitle">
+    <div class="modal-backdrop" id="billDetailModalBackdrop"></div>
+    <div class="modal-card modal-card-large gradient-border-card" style="max-width: 980px; width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
+      
+      <!-- Modal Header -->
+      <div class="modal-header bill-detail-modal-header" style="border-bottom: 1px solid var(--color-border); padding-bottom: 0.85rem; flex-shrink: 0;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+          <button type="button" class="btn-back-nav" id="backToBillHistoryBtn" title="Back to Bill History">
+            ← Back to Bill History
+          </button>
+          <div class="bill-detail-title-group">
+            <h3 class="modal-title" id="billDetailModalTitle" style="font-size: 1.15rem;">Invoice Details</h3>
+            <span class="bill-detail-subtitle" id="billDetailModalSubtitle" style="font-size: 0.75rem; color: var(--color-text-muted);">Verified Purchase Record</span>
+          </div>
+        </div>
+        <div class="bill-detail-actions-group" style="display: flex; align-items: center; gap: 0.5rem;">
+          <a href="#" target="_blank" class="btn-secondary" id="billDetailViewOriginalBtn" style="height: 32px; font-size: 0.75rem; padding: 0 0.75rem; display: inline-flex; align-items: center; gap: 0.35rem;">
+            <span>👁️ View Original</span>
+          </a>
+          <a href="#" download class="btn-secondary" id="billDetailDownloadOriginalBtn" style="height: 32px; font-size: 0.75rem; padding: 0 0.75rem; display: inline-flex; align-items: center; gap: 0.35rem;">
+            <span>⬇️ Download</span>
+          </a>
+          <button type="button" class="btn-close-modal" id="closeBillDetailModalBtn">×</button>
+        </div>
+      </div>
+
+      <!-- Scrollable Modal Body -->
+      <div class="bill-detail-modal-body custom-scrollbar" style="overflow-y: auto; padding: 1.25rem 0.5rem; flex: 1;">
+        
+        <!-- Header Info Grid Cards -->
+        <div class="bill-meta-cards-grid">
+          <!-- Supplier Card -->
+          <div class="bill-meta-card">
+            <div class="bill-meta-header">
+              <span class="bill-meta-icon">🏢</span>
+              <strong class="bill-meta-heading">Distributor / Supplier</strong>
+            </div>
+            <div class="bill-meta-content">
+              <div class="bill-distributor-name" id="billDetailDistributorName">—</div>
+              <div class="bill-meta-row" id="billDetailSellerNameRow"><span class="lbl">Shop / Entity:</span> <span id="billDetailSellerName">—</span></div>
+              <div class="bill-meta-row"><span class="lbl">Place / City:</span> <span id="billDetailPlace">—</span></div>
+              <div class="bill-meta-row"><span class="lbl">Address:</span> <span id="billDetailAddress">—</span></div>
+            </div>
+          </div>
+
+          <!-- Tax & License Card -->
+          <div class="bill-meta-card">
+            <div class="bill-meta-header">
+              <span class="bill-meta-icon">📋</span>
+              <strong class="bill-meta-heading">Tax & Compliance</strong>
+            </div>
+            <div class="bill-meta-content">
+              <div class="bill-meta-row"><span class="lbl">GSTIN:</span> <strong class="mono-val" id="billDetailGstin">—</strong></div>
+              <div class="bill-meta-row"><span class="lbl">Drug Licence (DL):</span> <strong class="mono-val" id="billDetailDlNumber">—</strong></div>
+              <div class="bill-meta-row"><span class="lbl">Contact Phone:</span> <span id="billDetailPhone">—</span></div>
+              <div class="bill-meta-row"><span class="lbl">Record ID:</span> <span class="mono-val" id="billDetailId">—</span></div>
+            </div>
+          </div>
+
+          <!-- Invoice & Finance Card -->
+          <div class="bill-meta-card highlight-card">
+            <div class="bill-meta-header">
+              <span class="bill-meta-icon">🧾</span>
+              <strong class="bill-meta-heading">Invoice & Summary</strong>
+            </div>
+            <div class="bill-meta-content">
+              <div class="bill-meta-row"><span class="lbl">Invoice Number:</span> <strong class="mono-val text-gradient-brand" id="billDetailInvoiceNo">—</strong></div>
+              <div class="bill-meta-row"><span class="lbl">Invoice Date:</span> <strong id="billDetailInvoiceDate">—</strong></div>
+              <div class="bill-meta-row"><span class="lbl">Medicines Count:</span> <span id="billDetailItemsCount">0 items</span></div>
+              <div class="bill-meta-row total-row"><span class="lbl">Total Bill Amount:</span> <strong class="bill-total-price" id="billDetailTotalAmount">₹0.00</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Document Viewer (Collapsible / Toggleable) -->
+        <div class="bill-original-doc-section" id="billDetailDocSection">
+          <div class="doc-section-header">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span>📁</span>
+              <strong>Original Uploaded Document</strong>
+              <span class="doc-filename-badge" id="billDetailDocFilename">uploaded_bill.jpg</span>
+            </div>
+            <button type="button" class="btn-text-link" id="toggleDocPreviewBtn" style="font-size: 0.75rem;">Hide Preview ▲</button>
+          </div>
+          <div class="doc-preview-wrapper" id="billDetailDocPreviewContainer">
+            <img id="billDetailDocImg" src="" alt="Original Invoice Document" class="bill-doc-preview-img" style="display:none;">
+            <div id="billDetailPdfNotice" class="bill-pdf-preview-box" style="display:none;">
+              <span style="font-size: 2.2rem;">📄</span>
+              <strong id="billDetailPdfTitle" style="margin-top: 0.5rem;">PDF Invoice Document</strong>
+              <p style="font-size: 0.8125rem; color: var(--color-text-muted); margin: 0.25rem 0 0.75rem 0;">This bill was ingested as a PDF document.</p>
+              <a href="#" target="_blank" class="btn-primary" id="billDetailOpenPdfBtn" style="font-size: 0.8125rem; padding: 0.4rem 1rem;">Open Full PDF in New Tab ↗</a>
+            </div>
+            <div id="billDetailNoDocNotice" class="bill-pdf-preview-box" style="display:none;">
+              <span style="font-size: 2rem;">🗂️</span>
+              <p style="font-size: 0.8125rem; color: var(--color-text-muted); margin-top: 0.5rem;">No original document file attached to this manual record.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Confirmed Line Items Table -->
+        <div class="bill-items-table-section" style="margin-top: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--color-text-main);">Extracted & Confirmed Line Items</h4>
+              <span class="sidebar-count-pill" id="billDetailItemsBadge">0</span>
+            </div>
+            <span style="font-size: 0.75rem; color: var(--color-text-muted);">Batch & FEFO records linked directly to active inventory</span>
+          </div>
+
+          <div class="table-responsive-wrapper gradient-border-subtle">
+            <table class="inventory-table bill-line-items-table">
+              <thead>
+                <tr>
+                  <th style="width: 40px;">#</th>
+                  <th>Medicine Name</th>
+                  <th>Composition / Generic</th>
+                  <th>Pack</th>
+                  <th>Batch No.</th>
+                  <th>Expiry Date</th>
+                  <th>Purchased Qty</th>
+                  <th>Current Stock</th>
+                  <th>Purchase Rate</th>
+                  <th>MRP</th>
+                  <th>Line Total</th>
+                </tr>
+              </thead>
+              <tbody id="billDetailItemsTbody">
+                <!-- Line items rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="modal-footer" style="border-top: 1px solid var(--color-border); padding-top: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 0.75rem; color: var(--color-text-muted);">Permanently stored in 256-bit secure pharmacy database.</span>
+        <button type="button" class="btn-secondary" id="closeBillDetailModalBottomBtn">Close</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       MODAL 8: DUPLICATE BILL DETECTION & WARNING
+       ========================================================================== -->
+  <div id="duplicateBillModal" class="modal-wrapper view-hidden" role="dialog" aria-modal="true" aria-labelledby="duplicateBillModalTitle">
+    <div class="modal-backdrop" id="duplicateBillModalBackdrop"></div>
+    <div class="modal-card gradient-border-card" style="max-width: 520px;">
+      
+      <div class="modal-header" style="border-bottom: 1px solid var(--color-border); padding-bottom: 0.85rem;">
+        <div style="display: flex; align-items: center; gap: 0.65rem;">
+          <div style="width: 38px; height: 38px; border-radius: var(--radius-sm); background: #fef2f2; color: #dc2626; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;" id="duplicateModalIcon">
+            ⚠️
+          </div>
+          <div>
+            <h3 class="modal-title" id="duplicateBillModalTitle" style="color: #dc2626;">Bill Already Uploaded</h3>
+            <p style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.15rem;" id="duplicateBillModalSubtitle">
+              Duplicate purchase bill prevention
+            </p>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" id="closeDuplicateBillModalBtn">×</button>
+      </div>
+
+      <div class="modal-body" style="padding-top: 1rem;">
+        <p style="font-size: 0.875rem; color: var(--color-text-main); margin-bottom: 1rem; line-height: 1.45;" id="duplicateBillModalMessage">
+          This exact purchase bill has already been processed and added to your Bill History.
+        </p>
+
+        <!-- Existing Bill Snapshot Card -->
+        <div class="dash-card gradient-border-subtle" style="padding: 1rem; background: #f8fafc; border-radius: var(--radius-md); margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+            <div>
+              <strong style="font-size: 0.95rem; color: var(--color-text-main);" id="dupExistingDistributor">Distributor Name</strong>
+              <div style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.15rem;" id="dupExistingInvoiceMeta">
+                Invoice #A00234 • 12 Sep 2026
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <strong style="font-family: var(--font-mono); font-size: 1rem; color: #059669;" id="dupExistingAmount">₹0.00</strong>
+            </div>
+          </div>
+          <div style="font-size: 0.725rem; color: var(--color-text-muted); display: flex; align-items: center; gap: 0.5rem;" id="dupExistingAddedDate">
+            <span>📅 Added to Bill History</span>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1.25rem;">
+          <button type="button" class="btn-primary" id="dupViewExistingBillBtn" style="height: 38px; font-size: 0.8125rem; width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+            <span>📄 View Existing Bill in Bill History</span>
+          </button>
+          <div style="display: flex; gap: 0.5rem; width: 100%;">
+            <button type="button" class="btn-secondary" id="dupCancelUploadBtn" style="height: 36px; font-size: 0.8125rem; flex: 1;">
+              Cancel Upload
+            </button>
+            <button type="button" class="btn-secondary" id="dupContinueAnywayBtn" style="height: 36px; font-size: 0.8125rem; flex: 1; color: var(--brand-primary); font-weight: 600;" hidden>
+              Continue Anyway (Different Bill) →
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
   <!-- Firebase SDKs (v10 compat mode) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <script src="firebase-config.js"></script>
 
-
-  <!-- Real In-Browser OCR Engine (Tesseract.js) -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
-  <script src="utils/inventoryRules.js"></script>
   <script src="app.js"></script>
-  
 </body>
 </html>

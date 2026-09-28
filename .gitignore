@@ -1,11 +1,38 @@
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
+
+# SQLite databases
 *.db
+*.sqlite
+*.sqlite3
+
+# Environment and secrets
 .env
-.env.local
+.env.*
+!.env.example
+*.env
+*.pem
+*.key
+*.cert
+*.crt
+*serviceAccount*.json
+*service-account*.json
+*credentials*.json
+firebase-adminsdk*.json
+
+# Key archives & temp docs
 *.pages
 api key*
+api_key*
+credentials*
+secret*
+
+# Local uploads and test files
 uploads/bills/*
 !uploads/bills/.gitkeep
+
+# OS generated files
 .DS_Store
+Thumbs.db
