@@ -3,34 +3,38 @@
 (function (global) {
   // 1. Tiered Low-Stock Safety Thresholds
   const STOCK_THRESHOLDS = {
-    HIGH_DEMAND: 50,   // Fast-moving / common (e.g. Paracetamol, Dolo, Antacids, Antibiotics)
-    MEDIUM_DEMAND: 20, // Regular maintenance (e.g. BP, Diabetes, standard tablets)
-    LOW_DEMAND: 5,     // Specialist / expensive / rare (e.g. Chemotherapy, rare injectables)
+    HIGH_DEMAND: 50,   // Fast-moving / common (e.g. Paracetamol, Dolo, Antacids, Cough syrups)
+    MEDIUM_DEMAND: 20, // Regular maintenance / chronic care (e.g. BP, Diabetes, daily tablets)
+    LOW_DEMAND: 10,     // Specialist / expensive / rare (e.g. Injections, Chemotherapy, Infusions)
     DEFAULT: 20
   };
 
-  // Common keywords for automatic demand classification
-  const COMMON_HIGH_DEMAND_KEYWORDS = [
-    'paracetamol', 'dolo', 'crocin', 'pan', 'pantop', 'omee', 'cetri', 'cetirizine',
-    'amoxicillin', 'augmentin', 'azithro', 'azithromycin', 'ors', 'cough', 'vicks',
-    'calpol', 'combiflam', 'allegra', 'cheston', 'metrogyl'
+  // High Demand keywords (fast-moving OTC, pain, fever, cold, acidity, common antibiotics)
+  const HIGH_DEMAND_KEYWORDS = [
+    'paracetamol', 'dolo', 'crocin', 'calpol', 'combiflam',
+    'pan', 'pantop', 'omee', 'rabeprazole', 'gelusil', 'digene', 'antacid',
+    'cetri', 'cetirizine', 'allegra', 'cheston', 'cold', 'cough',
+    'amoxicillin', 'augmentin', 'azithral', 'azithro', 'azithromycin',
+    'ors', 'electral', 'vicks', 'metrogyl'
   ];
 
-  const RARE_LOW_DEMAND_KEYWORDS = [
-    'inj', 'injection', 'vial', 'chemo', 'oncology', 'infusion', 'vaccine', 'recombinant'
+  // Low Demand keywords (specialist, costly, rare condition, injectables)
+  const LOW_DEMAND_KEYWORDS = [
+    'inj', 'injection', 'vial', 'ampoule', 'infusion',
+    'chemo', 'oncology', 'vaccine', 'recombinant', 'serum', 'biologic'
   ];
 
   /**
-   * Infers demand tier from medicine name if not explicitly set
+   * Automatically infers demand tier from medicine name
    */
   function inferDemandTier(medicineName) {
     if (!medicineName) return 'MEDIUM_DEMAND';
     const lower = medicineName.toLowerCase();
 
-    if (COMMON_HIGH_DEMAND_KEYWORDS.some(k => lower.includes(k))) {
+    if (HIGH_DEMAND_KEYWORDS.some(k => lower.includes(k))) {
       return 'HIGH_DEMAND';
     }
-    if (RARE_LOW_DEMAND_KEYWORDS.some(k => lower.includes(k))) {
+    if (LOW_DEMAND_KEYWORDS.some(k => lower.includes(k))) {
       return 'LOW_DEMAND';
     }
     return 'MEDIUM_DEMAND';
@@ -40,7 +44,10 @@
    * Evaluates if a medicine is running low on stock
    */
   function checkStockAlert(medicineName, totalQuantity, explicitTier = null) {
-    const tier = explicitTier || inferDemandTier(medicineName);
+    const tier = (explicitTier && explicitTier !== 'AUTO') 
+      ? explicitTier 
+      : inferDemandTier(medicineName);
+
     const threshold = STOCK_THRESHOLDS[tier] || STOCK_THRESHOLDS.DEFAULT;
     const qty = Number(totalQuantity || 0);
 
@@ -48,7 +55,9 @@
       isLowStock: qty <= threshold,
       threshold: threshold,
       tier: tier,
-      tierLabel: tier === 'HIGH_DEMAND' ? 'High Demand (Common)' : (tier === 'LOW_DEMAND' ? 'Low Demand (Specialist)' : 'Standard Demand'),
+      tierLabel: tier === 'HIGH_DEMAND' 
+        ? 'High Demand (Common)' 
+        : (tier === 'LOW_DEMAND' ? 'Low Demand (Specialist)' : 'Medium Demand (Standard)'),
       unitsRemaining: qty,
       deficit: Math.max(0, threshold - qty)
     };
@@ -92,7 +101,7 @@
     }
   }
 
-  // Expose globally to window
+  // Expose globally to browser window
   global.InventoryRules = {
     STOCK_THRESHOLDS,
     inferDemandTier,

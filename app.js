@@ -246,9 +246,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  const getStorageKey = (pId) => {
+    const id = pId || (currentPharmacy ? (currentPharmacy.id || currentPharmacy.uid || currentPharmacy.dl_number || currentPharmacy.dlNumber || currentPharmacy.shop_name || 'default') : 'default');
+    return `expirednot_data_${id}`;
+  };
+
   const savePharmacyData = () => {
-    if (!currentPharmacy || !currentPharmacy.id || isDemoMode) return;
-    localStorage.setItem(`expirednot_data_${currentPharmacy.id}`, JSON.stringify(pharmacyDb));
+    if (isDemoMode) return;
+    localStorage.setItem(getStorageKey(), JSON.stringify(pharmacyDb));
   };
 
   // ==========================================================================
@@ -1845,31 +1850,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join('');
   };
 
+  // ==========================================================================
+  // SECTION 5: TIERED LOW STOCK ALERTS (50 / 20 / 10 LIMITS)
+  // ==========================================================================
   const renderLowStockView = () => {
     const list = document.getElementById('lowStockList');
     const empty = document.getElementById('emptyLowStockState');
     const sideCountLowStock = document.getElementById('sideCountLowStock');
     if (!list || !empty) return;
 
-    // Aggregate total quantity across batches for each medicine
+    // 1. Aggregate stock across batches and resolve demand tier
     const medTotals = {};
     const medTiers = {};
 
     pharmacyDb.batches.forEach(b => {
       const k = b.name.trim();
-      medTotals[k] = (medTotals[k] || 0) + b.quantity;
-      if (b.demandTier) medTiers[k] = b.demandTier;
+      medTotals[k] = (medTotals[k] || 0) + (Number(b.quantity) || 0);
+
+      // Resolve tier: if already saved and not AUTO, use it; otherwise auto-detect from name
+      if (!medTiers[k] || medTiers[k] === 'AUTO') {
+        if (b.demandTier && b.demandTier !== 'AUTO') {
+          medTiers[k] = b.demandTier;
+        } else if (window.InventoryRules) {
+          medTiers[k] = window.InventoryRules.inferDemandTier(k);
+        }
+      }
     });
 
-    // Check each medicine against tiered stock rules
+    // 2. Evaluate each medicine against its tier threshold
     const lowStockItems = [];
     Object.keys(medTotals).forEach(name => {
       const qty = medTotals[name];
-      const tier = medTiers[name] && medTiers[name] !== 'AUTO' ? medTiers[name] : null;
-      
+      const tier = medTiers[name] || (window.InventoryRules ? window.InventoryRules.inferDemandTier(name) : 'MEDIUM_DEMAND');
+
       const alertInfo = window.InventoryRules 
         ? window.InventoryRules.checkStockAlert(name, qty, tier)
-        : { isLowStock: qty > 0 && qty < 15, threshold: 15, tierLabel: 'Standard' };
+        : { isLowStock: qty <= 20, threshold: 20, tierLabel: 'Medium Demand' };
 
       if (alertInfo.isLowStock && qty > 0) {
         lowStockItems.push({
@@ -1895,8 +1911,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     empty.hidden = true;
     list.hidden = false;
-
-    // Sort by largest deficit first
     lowStockItems.sort((a, b) => b.deficit - a.deficit);
 
     list.innerHTML = lowStockItems.map(item => `
@@ -1910,7 +1924,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ⚠️ Current Stock: ${item.qty} units (Threshold: ${item.threshold} • Need: +${item.deficit})
           </div>
         </div>
-        <button type="button" class="btn-primary" style="height:32px; font-size:0.75rem;" onclick="alert('Reorder reminder created for ${item.name} (Need +${item.deficit} units)')">
+        <button type="button" class="btn-primary" style="height:32px; font-size:0.75rem;" onclick="alert('Reorder reminder set for ${item.name} (+${item.deficit} units)')">
           Create Reorder Reminder
         </button>
       </div>
@@ -2046,20 +2060,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const empty = document.getElementById('emptyExpensesState');
     if (!tbody || !empty) return;
 
-    if (pharmacyDb.expenses.length === 0) {
+    if (!pharmacyDb.expenses || pharmacyDb.expenses.length === 0) {
       tbody.innerHTML = '';
       empty.hidden = false;
+      empty.style.display = 'block';
       return;
     }
 
     empty.hidden = true;
+    empty.style.display = 'none';
 
     tbody.innerHTML = pharmacyDb.expenses.map(exp => `
       <tr>
         <td><span style="font-size:0.75rem; color:var(--color-text-muted);">${exp.date}</span></td>
         <td><span class="table-batch-pill">${exp.category}</span></td>
         <td><strong>${exp.desc}</strong></td>
-        <td><strong>₹${exp.amount.toLocaleString('en-IN')}</strong></td>
+        <td><strong>₹${Number(exp.amount || 0).toLocaleString('en-IN')}</strong></td>
       </tr>
     `).join('');
   };
@@ -2708,12 +2724,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       let totalBillAmount = 0;
 
-      // Add each extracted medicine directly to your inventory batches
-      payloadItems.forEach(item => {
+     payloadItems.forEach(item => {
         const lineTotal = item.quantity * item.purchase_rate;
         totalBillAmount += lineTotal;
 
-        // Auto-detect demand tier using our inventory rules
+        // Auto-detect demand tier from the medicine's printed name
         const tier = window.InventoryRules 
           ? window.InventoryRules.inferDemandTier(item.name) 
           : 'MEDIUM_DEMAND';
@@ -2729,19 +2744,8 @@ document.addEventListener('DOMContentLoaded', () => {
           mrp: item.mrp || (item.purchase_rate * 1.3),
           rack: 'Rack A-1',
           distributor: distributor,
-          demandTier: tier,
+          demandTier: tier, // Saved with auto-detected tier
           createdAt: new Date().toISOString()
-        });
-
-        pharmacyDb.movements.unshift({
-          id: 'MOV_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-          timestamp: 'Just now',
-          type: 'Purchased',
-          medicineName: item.name,
-          batchNo: item.batch_no,
-          quantity: item.quantity,
-          value: lineTotal,
-          notes: `Invoice #${invoiceNo}`
         });
       });
 
@@ -3150,6 +3154,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (cancelAddMedBtn) cancelAddMedBtn.addEventListener('click', closeAddMedModal);
 
   // Bulletproof Manual Add Medicine Handler
+  // Bulletproof Manual Add Medicine Handler
   if (addMedForm) {
     addMedForm.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -3185,7 +3190,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const qty = parseFloat(mQty.value) || 1;
       const rate = parseFloat(mPurchaseRate ? mPurchaseRate.value : 0) || 0;
       const mrp = parseFloat(mMrp ? mMrp.value : 0) || (rate > 0 ? rate * 1.3 : 0);
-      const tier = mDemandTier ? mDemandTier.value : 'AUTO';
+
+      // Auto-detect demand tier if AUTO is selected
+      let selectedTier = mDemandTier ? mDemandTier.value : 'AUTO';
+      if (selectedTier === 'AUTO' || !selectedTier) {
+        selectedTier = window.InventoryRules 
+          ? window.InventoryRules.inferDemandTier(mMedName.value.trim()) 
+          : 'MEDIUM_DEMAND';
+      }
 
       const newBatch = {
         id: 'B_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -3199,11 +3211,11 @@ document.addEventListener('DOMContentLoaded', () => {
         mrp: mrp,
         rack: mRack && mRack.value.trim() ? mRack.value.trim() : 'Rack A-1',
         distributor: mDistributor && mDistributor.value.trim() ? mDistributor.value.trim() : 'Direct Supplier',
-        demandTier: tier,
+        demandTier: selectedTier,
         createdAt: new Date().toISOString()
       };
 
-      // 1. Add to local memory database
+      // Add to local memory database
       pharmacyDb.batches.unshift(newBatch);
 
       pharmacyDb.movements.unshift({
@@ -3223,10 +3235,8 @@ document.addEventListener('DOMContentLoaded', () => {
         timestamp: 'Just now'
       });
 
-      // 2. Persist to storage
       savePharmacyData();
 
-      // 3. Optional: Try saving to backend SQLite if backend is online
       try {
         await fetch(`${API_BASE_URL}/api/inventory`, {
           method: 'POST',
@@ -3242,11 +3252,8 @@ document.addEventListener('DOMContentLoaded', () => {
             distributor: newBatch.distributor
           })
         });
-      } catch (err) {
-        // Backend optional fallback, already saved in memory
-      }
+      } catch (err) {}
 
-      // 4. Close modal and update UI
       closeAddMedModal();
       refreshAllWorkspaceViews();
       alert(`✓ ${newBatch.name} (Batch ${newBatch.batchNo}) added to inventory!`);
@@ -3354,26 +3361,30 @@ document.addEventListener('DOMContentLoaded', () => {
   if (expenseForm) {
     expenseForm.addEventListener('submit', (e) => {
       e.preventDefault();
-      const expCategory = document.getElementById('expCategory').value;
-      const expAmount = parseFloat(document.getElementById('expAmount').value) || 0;
-      const expDesc = document.getElementById('expDesc').value.trim();
+      const expCategory = document.getElementById('expCategory')?.value || 'Other';
+      const expAmount = parseFloat(document.getElementById('expAmount')?.value) || 0;
+      const expDesc = document.getElementById('expDesc')?.value?.trim() || '';
 
       if (!expDesc || expAmount <= 0) {
-        alert('Please enter valid expense details.');
+        alert('Please enter a description and an amount greater than 0.');
         return;
       }
 
-      pharmacyDb.expenses.unshift({
+      const newExpense = {
         id: 'EXP_' + Date.now(),
         date: new Date().toISOString().split('T')[0],
         category: expCategory,
         desc: expDesc,
         amount: expAmount
-      });
+      };
+
+      if (!pharmacyDb.expenses) pharmacyDb.expenses = [];
+      pharmacyDb.expenses.unshift(newExpense);
 
       savePharmacyData();
       closeExpenseModal();
-      refreshAllWorkspaceViews();
+      renderExpensesView();
+      alert(`✓ Recorded ₹${expAmount.toLocaleString('en-IN')} for ${expDesc}`);
     });
   }
 
